@@ -37,6 +37,12 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import BroadlinkDevice
+from .capture_entities import (
+    BroadlinkCaptureSwitch,
+    BroadlinkSlidingWindowSwitch,
+    BroadlinkStopAfterFirstSwitch,
+    capture_kinds,
+)
 from .const import DOMAIN, DOMAINS_AND_TYPES
 from .entity import BroadlinkEntity
 from .helpers import data_packet, import_device, mac_address
@@ -117,11 +123,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Broadlink switch."""
     device = hass.data[DOMAIN].devices[config_entry.entry_id]
-    switches: list[BroadlinkSwitch] = []
+    switches: list[SwitchEntity] = []
 
     if device.api.type in DOMAINS_AND_TYPES[Platform.REMOTE]:
         platform_data = hass.data[DOMAIN].platforms.setdefault(Platform.SWITCH, {})
         platform_data[device.api.mac] = async_add_entities, device
+        switches.extend(
+            BroadlinkCaptureSwitch(device, kind) for kind in capture_kinds(device)
+        )
+        switches.append(BroadlinkStopAfterFirstSwitch(device))
+        switches.append(BroadlinkSlidingWindowSwitch(device))
     elif device.api.type == "SP1":
         switches.append(BroadlinkSP1Switch(device))
 

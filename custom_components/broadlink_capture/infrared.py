@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .capture_entities import BroadlinkInfraredReceiverEntity
 from .const import DOMAIN
 from .entity import BroadlinkEntity
 
@@ -36,11 +37,13 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Broadlink infrared entity."""
+    """Set up Broadlink infrared entities."""
     # Uses legacy hass.data[DOMAIN] pattern
     # pylint: disable-next=home-assistant-use-runtime-data
     device = hass.data[DOMAIN].devices[config_entry.entry_id]
-    async_add_entities([BroadlinkInfraredEntity(device)])
+    async_add_entities(
+        [BroadlinkInfraredEntity(device), BroadlinkInfraredReceiverEntity(device)]
+    )
 
 
 class BroadlinkInfraredEntity(BroadlinkEntity, InfraredEmitterEntity):

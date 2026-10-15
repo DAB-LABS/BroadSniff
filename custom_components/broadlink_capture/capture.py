@@ -1,0 +1,254 @@
+"""Capture windows on Broadlink universal remotes.
+
+A device has one receiver, so it runs at most one capture window at a time,
+infrared or radio frequency. The library owns the window (arming, polling,
+re-arming, stop-after-first, sliding and taking the device out of learning
+mode when it closes); this runs it as a background task, keeps the settings
+the entities change, and tells listeners about signals and windows.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncGenerator, Callable
+from contextlib import aclosing, suppress
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import StrEnum
+import logging
+from typing import TYPE_CHECKING
+
+from broadlink_async.exceptions import (
+    AuthorizationError,
+    BroadlinkException,
+    ConnectionClosedError,
+    EndpointClosedError,
+)
+from broadlink_async.remote import CapturedSignal
+
+from homeassistant.core import CALLBACK_TYPE, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    DEFAULT_CAPTURE_WINDOW,
+    DEFAULT_SLIDING_WINDOW,
+    DEFAULT_STOP_AFTER_FIRST,
+    DOMAIN,
+    RF_LEARN_FREQUENCY_SWEEP,
+)
+
+if TYPE_CHECKING:
+    from .device import BroadlinkDevice
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class CaptureKind(StrEnum):
+    """The band a capture window listens on."""
+
+    IR = "ir"
+    RF = "rf"
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureWindowResult:
+    """How a capture window ended."""
+
+    kind: CaptureKind
+    signals: int
+    stopped: bool
+
+
+type SignalListener = Callable[[CapturedSignal, CaptureKind], None]
+type EndedListener = Callable[[CaptureWindowResult], None]
+
+
+class BroadlinkCapture:
+    """Runs capture windows on one device and fans out what they catch."""
+
+    def __init__(self, device: BroadlinkDevice) -> None:
+        """Initialize with the default settings."""
+        self._device = device
+        self.window: float = DEFAULT_CAPTURE_WINDOW
+        self.stop_after_first: bool = DEFAULT_STOP_AFTER_FIRST
+        self.sliding: bool = DEFAULT_SLIDING_WINDOW
+        self.rf_frequency: float = RF_LEARN_FREQUENCY_SWEEP
+        self._task: asyncio.Task[int] | None = None
+        self._kind: CaptureKind | None = None
+        self._ends_at: datetime | None = None
+        self._signal_listeners: list[SignalListener] = []
+        self._state_listeners: list[CALLBACK_TYPE] = []
+        self._ended_listeners: list[EndedListener] = []
+
+    @property
+    def kind(self) -> CaptureKind | None:
+        """Return the band of the open window, or None if none is open."""
+        return self._kind
+
+    @property
+    def ends_at(self) -> datetime | None:
+        """Return when the open window closes, if it has a deadline."""
+        return self._ends_at
+
+    @callback
+    def async_add_signal_listener(self, listener: SignalListener) -> CALLBACK_TYPE:
+        """Call listener with every signal any window catches."""
+        return _add(self._signal_listeners, listener)
+
+    @callback
+    def async_add_state_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
+        """Call listener whenever a window opens, closes or moves its deadline."""
+        return _add(self._state_listeners, listener)
+
+    @callback
+    def async_add_ended_listener(self, listener: EndedListener) -> CALLBACK_TYPE:
+        """Call listener when a window closes, with how it ended."""
+        return _add(self._ended_listeners, listener)
+
+    async def async_start(
+        self,
+        kind: CaptureKind,
+        *,
+        window: float | None = None,
+        stop_after_first: bool | None = None,
+        sliding: bool | None = None,
+        on_signal: Callable[[CapturedSignal], None] | None = None,
+    ) -> asyncio.Task[int]:
+        """Open a capture window, closing any window already open.
+
+        Settings not given come from the entities. The returned task
+        finishes when the window closes, with the number of signals caught,
+        and raises HomeAssistantError if the device failed during it.
+        """
+        await self.async_stop()
+        window = self.window if window is None else window
+        stop_after_first = (
+            self.stop_after_first if stop_after_first is None else stop_after_first
+        )
+        sliding = self.sliding if sliding is None else sliding
+        api = self._device.api
+        signals: AsyncGenerator[CapturedSignal]
+        if kind is CaptureKind.RF:
+            signals = api.capture_rf(
+                window,
+                frequency=self.rf_frequency or None,
+                stop_after_first=stop_after_first,
+                extend_on_signal=sliding,
+            )
+        else:
+            signals = api.capture(
+                window, stop_after_first=stop_after_first, extend_on_signal=sliding
+            )
+        self._kind = kind
+        self._ends_at = _deadline(window)
+        self._notify_state()
+        task = self._device.config.async_create_background_task(
+            self._device.hass,
+            self._async_run(signals, kind, window, sliding, on_signal),
+            name=f"broadlink_capture {kind} window {self._device.name}",
+        )
+        self._task = task
+        return task
+
+    async def async_stop(self) -> None:
+        """Close the open window, if any."""
+        if (task := self._task) is None:
+            return
+        self._task = None
+        if task.done():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError, HomeAssistantError):
+            await task
+
+    async def _async_run(
+        self,
+        signals: AsyncGenerator[CapturedSignal],
+        kind: CaptureKind,
+        window: float,
+        sliding: bool,
+        on_signal: Callable[[CapturedSignal], None] | None,
+    ) -> int:
+        """Consume one window and publish what it catches."""
+        caught = 0
+        stopped = False
+        try:
+            async with aclosing(signals):
+                async for signal in signals:
+                    caught += 1
+                    if sliding:
+                        self._ends_at = _deadline(window)
+                        self._notify_state()
+                    self._publish(signal, kind, on_signal)
+        except asyncio.CancelledError:
+            stopped = True
+            raise
+        except (BroadlinkException, OSError) as err:
+            # A rejected session starts the reauth flow, except when the
+            # device was closed on purpose, as with any other request.
+            if isinstance(
+                err, (AuthorizationError, ConnectionClosedError)
+            ) and not isinstance(err, EndpointClosedError):
+                await self._device.async_auth()
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="capture_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        finally:
+            if self._task is asyncio.current_task():
+                self._task = None
+            self._kind = None
+            self._ends_at = None
+            self._notify_state()
+            result = CaptureWindowResult(kind=kind, signals=caught, stopped=stopped)
+            for listener in tuple(self._ended_listeners):
+                _call(listener, result)
+        return caught
+
+    @callback
+    def _publish(
+        self,
+        signal: CapturedSignal,
+        kind: CaptureKind,
+        on_signal: Callable[[CapturedSignal], None] | None,
+    ) -> None:
+        """Hand a signal to the window's caller and to every listener."""
+        if on_signal is not None:
+            on_signal(signal)
+        for listener in tuple(self._signal_listeners):
+            _call(listener, signal, kind)
+
+    @callback
+    def _notify_state(self) -> None:
+        """Tell the state listeners that the window changed."""
+        for listener in tuple(self._state_listeners):
+            _call(listener)
+
+
+def _deadline(window: float) -> datetime | None:
+    """Return when a window of this length opened now would close."""
+    if window <= 0:
+        return None
+    return dt_util.utcnow() + timedelta(seconds=window)
+
+
+def _add[_T](listeners: list[_T], listener: _T) -> CALLBACK_TYPE:
+    """Add a listener and return the function that removes it."""
+    listeners.append(listener)
+
+    @callback
+    def remove() -> None:
+        with suppress(ValueError):
+            listeners.remove(listener)
+
+    return remove
+
+
+def _call(listener: Callable[..., None], *args: object) -> None:
+    """Call a listener, logging instead of raising if it fails."""
+    try:
+        listener(*args)
+    except Exception:
+        _LOGGER.exception("Error in a Broadlink capture listener")

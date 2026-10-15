@@ -169,7 +169,11 @@ async def test_custom_ir_switch_setup_works(
     await async_setup_platform(hass, config, MagicMock())
     await hass.async_block_till_done()
 
-    entity_ids = hass.states.async_entity_ids(SWITCH_DOMAIN)
+    entity_ids = [
+        entity_id
+        for entity_id in hass.states.async_entity_ids(SWITCH_DOMAIN)
+        if entity_id == "switch.fan"
+    ]
     assert len(entity_ids) == 1
 
     await hass.services.async_call(

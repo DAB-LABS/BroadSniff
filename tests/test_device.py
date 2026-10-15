@@ -51,7 +51,9 @@ async def test_device_setup_rm5plus(hass: HomeAssistant) -> None:
 
     assert mock_setup.entry.state is ConfigEntryState.LOADED
     assert set(mock_forward.mock_calls[0][1][1]) == {
+        Platform.EVENT,
         Platform.INFRARED,
+        Platform.NUMBER,
         Platform.REMOTE,
         Platform.SWITCH,
     }

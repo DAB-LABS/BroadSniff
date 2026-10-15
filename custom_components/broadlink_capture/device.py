@@ -27,6 +27,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
+from .capture import BroadlinkCapture
 from .const import DEFAULT_PORT, DOMAIN, DOMAINS_AND_TYPES
 from .updater import BroadlinkUpdateManager, get_update_manager
 
@@ -51,6 +52,7 @@ class BroadlinkDevice[_ApiT: blk.Device = blk.Device]:
         self.fw_version: int | None = None
         self.authorized: bool | None = None
         self.reset_jobs: list[CALLBACK_TYPE] = []
+        self.capture = BroadlinkCapture(self)
 
     @property
     def name(self) -> str:
@@ -172,6 +174,7 @@ class BroadlinkDevice[_ApiT: blk.Device = blk.Device]:
             self.config, get_domains(self.api.type)
         )
         if unloaded:
+            await self.capture.async_stop()
             await self.api.aclose()
         return unloaded
 

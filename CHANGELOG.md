@@ -4,6 +4,18 @@ Versions follow the Home Assistant release the integration is based on.
 
 ## Unreleased
 
+### Added
+
+- Capture on RM remotes: Capture and RF capture switches, capture window,
+  stop after first signal, sliding window and RF learn frequency settings,
+  IR and RF capture event entities, and an IR receiver entity on the
+  infrared platform. Settings are restored across restarts.
+- `remote.learn_command` runs through the same capture windows, so it uses
+  the RF learn frequency when one is set, and closing a window takes the
+  device out of learning mode.
+
+### Base
+
 Starts from the Broadlink source in Home Assistant 2026.10.1 plus
 home-assistant/core#186053 (the switch to `broadlink-async`).
 

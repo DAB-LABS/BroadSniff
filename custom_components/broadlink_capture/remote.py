@@ -13,9 +13,8 @@ from broadlink_async.exceptions import (
     AuthorizationError,
     BroadlinkException,
     NetworkTimeoutError,
-    ReadError,
-    StorageError,
 )
+from broadlink_async.remote import CapturedSignal
 import probatio
 
 from homeassistant.components import persistent_notification
@@ -36,12 +35,13 @@ from homeassistant.components.remote import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_COMMAND, STATE_OFF
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
 
+from .capture import CaptureKind
 from .const import DOMAIN
 from .entity import BroadlinkEntity
 from .helpers import data_packet
@@ -309,9 +309,10 @@ class BroadlinkRemote(BroadlinkEntity, RemoteEntity, RestoreEntity):
 
             for command in commands:
                 try:
-                    code = await learn_command(command)
+                    first = await learn_command(command)
+                    code: str | list[str] = first
                     if toggle:
-                        code = [code, await learn_command(command)]
+                        code = [first, await learn_command(command)]
 
                 # pylint: disable-next=home-assistant-action-swallowed-exception
                 except (AuthorizationError, NetworkTimeoutError, OSError) as err:
@@ -322,125 +323,79 @@ class BroadlinkRemote(BroadlinkEntity, RemoteEntity, RestoreEntity):
                     _LOGGER.error("Failed to learn '%s': %s", command, err)
                     continue
 
+                # pylint: disable-next=home-assistant-action-swallowed-exception
+                except HomeAssistantError as err:
+                    _LOGGER.error("Failed to learn '%s': %s", command, err)
+                    if isinstance(
+                        err.__cause__,
+                        (AuthorizationError, NetworkTimeoutError, OSError),
+                    ):
+                        break
+                    continue
+
                 self._codes.setdefault(subdevice, {}).update({command: code})
                 should_store = True
 
             if should_store:
                 await self._code_storage.async_save(self._codes)
 
-    async def _async_learn_ir_command(self, command):
+    async def _async_learn_ir_command(self, command: str) -> str:
         """Learn an infrared command."""
-        device = self._device
+        return await self._async_learn(
+            command, CaptureKind.IR, prompt=f"Press the '{command}' button."
+        )
 
-        try:
-            await device.async_request(device.api.enter_learning)
+    async def _async_learn_rf_command(self, command: str) -> str:
+        """Learn a radiofrequency command.
 
-        except (BroadlinkException, OSError) as err:
-            _LOGGER.debug("Failed to enter learning mode: %s", err)
-            raise
+        With the RF learn frequency set, the device listens on that carrier
+        right away. Without it the device sweeps for the carrier while the
+        button is held, then learns the code from a fresh press; the library
+        runs both phases inside one capture window.
+        """
+        if self._device.capture.rf_frequency:
+            prompt = f"Press the '{command}' button."
+        else:
+            prompt = (
+                f"Press and hold the '{command}' button for a few seconds, "
+                "then release it and press it once more."
+            )
+        return await self._async_learn(command, CaptureKind.RF, prompt=prompt)
+
+    async def _async_learn(
+        self, command: str, kind: CaptureKind, *, prompt: str
+    ) -> str:
+        """Open a capture window on the device and return the first code."""
+        received: list[CapturedSignal] = []
+        window = await self._device.capture.async_start(
+            kind,
+            window=LEARNING_TIMEOUT.total_seconds(),
+            stop_after_first=True,
+            sliding=False,
+            on_signal=received.append,
+        )
 
         persistent_notification.async_create(
             self.hass,
-            f"Press the '{command}' button.",
+            prompt,
             title="Learn command",
             notification_id="learn_command",
         )
 
         try:
-            start_time = dt_util.utcnow()
-            while (dt_util.utcnow() - start_time) < LEARNING_TIMEOUT:
-                await asyncio.sleep(1)
-                try:
-                    code = await device.async_request(device.api.check_data)
-                except ReadError, StorageError:
-                    continue
-                return b64encode(code).decode("utf8")
-
-            raise TimeoutError(
-                "No infrared code received within "
-                f"{LEARNING_TIMEOUT.total_seconds()} seconds"
-            )
-
+            await window
         finally:
             persistent_notification.async_dismiss(
                 self.hass, notification_id="learn_command"
             )
 
-    async def _async_learn_rf_command(self, command):
-        """Learn a radiofrequency command."""
-        device = self._device
-
-        try:
-            await device.async_request(device.api.sweep_frequency)
-
-        except (BroadlinkException, OSError) as err:
-            _LOGGER.debug("Failed to sweep frequency: %s", err)
-            raise
-
-        persistent_notification.async_create(
-            self.hass,
-            f"Press and hold the '{command}' button.",
-            title="Sweep frequency",
-            notification_id="sweep_frequency",
-        )
-
-        try:
-            start_time = dt_util.utcnow()
-            while (dt_util.utcnow() - start_time) < LEARNING_TIMEOUT:
-                await asyncio.sleep(1)
-                is_found, frequency = await device.async_request(
-                    device.api.check_frequency
-                )
-                if is_found:
-                    _LOGGER.debug("Radiofrequency detected: %s MHz", frequency)
-                    break
-            else:
-                await device.async_request(device.api.cancel_sweep_frequency)
-                raise TimeoutError(
-                    "No radiofrequency found within "
-                    f"{LEARNING_TIMEOUT.total_seconds()} seconds"
-                )
-
-        finally:
-            persistent_notification.async_dismiss(
-                self.hass, notification_id="sweep_frequency"
-            )
-
-        await asyncio.sleep(1)
-
-        try:
-            await device.async_request(device.api.find_rf_packet)
-
-        except (BroadlinkException, OSError) as err:
-            _LOGGER.debug("Failed to enter learning mode: %s", err)
-            raise
-
-        persistent_notification.async_create(
-            self.hass,
-            f"Press the '{command}' button again.",
-            title="Learn command",
-            notification_id="learn_command",
-        )
-
-        try:
-            start_time = dt_util.utcnow()
-            while (dt_util.utcnow() - start_time) < LEARNING_TIMEOUT:
-                await asyncio.sleep(1)
-                try:
-                    code = await device.async_request(device.api.check_data)
-                except ReadError, StorageError:
-                    continue
-                return b64encode(code).decode("utf8")
-
+        if not received:
+            band = "radiofrequency" if kind is CaptureKind.RF else "infrared"
             raise TimeoutError(
-                "No radiofrequency code received within "
+                f"No {band} code received within "
                 f"{LEARNING_TIMEOUT.total_seconds()} seconds"
             )
-
-        finally:
-            persistent_notification.async_dismiss(
-                self.hass, notification_id="learn_command"
-            )
+        return b64encode(received[0].packet).decode("utf8")
 
     @override
     async def async_delete_command(self, **kwargs: Any) -> None:

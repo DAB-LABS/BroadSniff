@@ -36,8 +36,10 @@ async def test_infrared_setup_works(
         infrared_entities = [
             entry for entry in entries if entry.domain == Platform.INFRARED
         ]
-        assert len(infrared_entities) == 1
-        assert infrared_entities[0].unique_id == f"{device.mac}-emitter"
+        assert {entry.unique_id for entry in infrared_entities} == {
+            f"{device.mac}-emitter",
+            f"{device.mac}-receiver",
+        }
 
 
 async def test_infrared_not_created_for_non_ir_device(

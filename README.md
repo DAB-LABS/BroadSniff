@@ -15,6 +15,34 @@ Broadlink devices.
 > capture, Broadlink +Capture will be sunset and you will be asked to move
 > back to the built-in integration. A migration will be provided.
 
+## Capture
+
+Each RM remote gets these entities on top of what the built-in integration
+provides:
+
+- **Capture** switch: turn it on and the device listens for infrared codes.
+  It turns off by itself when the window closes, and turning it off stops
+  the device listening.
+- **RF capture** switch (RM pro and RM4 pro): the same for radio frequency.
+- **Capture window**: how long a window stays open, 1 to 300 seconds.
+- **Stop after first signal**: on by default, so the window closes after one
+  code. Turn it off to catch several codes in one window.
+- **Sliding window**: each code restarts the countdown, handy for learning a
+  whole remote in one go.
+- **RF learn frequency** (RM pro and RM4 pro): `0` sweeps for the carrier
+  while you hold the button; set it (for example `433.92`) to skip the sweep.
+- **IR capture** and **RF capture** events: fire with the captured code in
+  the `b64:...` form that `remote.send_command` accepts, and again when a
+  window ends, with how many codes it caught.
+- **IR receiver**: publishes captured infrared codes on Home Assistant's
+  infrared platform, so integrations that listen for infrared can use them.
+  Unlike an always-on receiver it only hears codes while a capture window is
+  open; its `capturing` attribute shows when that is.
+
+`remote.learn_command` works as in the built-in integration and uses the
+same capture windows, so a learn and a capture never run at the same time
+on one device.
+
 ## Installation
 
 1. In HACS, open the menu, choose **Custom repositories**, and add
