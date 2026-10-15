@@ -1,0 +1,4 @@
+pytest-homeassistant-custom-component==0.13.372
+broadlink-async>=1.1.0
+infrared-protocols==10.1.0
+rf-protocols==4.3.0

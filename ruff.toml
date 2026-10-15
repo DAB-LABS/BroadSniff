@@ -1,0 +1,8 @@
+# Kept close to core so the code can be synced with core Broadlink without
+# style churn; ruff format matches core's formatting.
+target-version = "py314"
+line-length = 88
+
+[lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
