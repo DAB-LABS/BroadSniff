@@ -1,264 +1,130 @@
-"""Tests for the Broadlink integration."""
+"""Helpers for BroadSniff tests."""
 
-from dataclasses import dataclass
-import inspect
-from unittest.mock import AsyncMock, MagicMock, patch
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import broadlink_async as blk
+from broadlink_async.remote import CapturedSignal
 
-from custom_components.broadlink_capture.const import DOMAIN
+from custom_components.broadsniff.const import BROADLINK_DOMAIN, DOMAIN
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_TIMEOUT, CONF_TYPE
 from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-# Do not edit/remove. Adding is ok.
-BROADLINK_DEVICES = {
-    "Entrance": (
-        "192.168.0.11",
-        "34ea34befc25",
-        "RM mini 3",
-        "Broadlink",
-        "RMMINI",
-        0x2737,
-        57,
-        8,
-    ),
-    "Living Room": (
-        "192.168.0.12",
-        "34ea34b43b5a",
-        "RM mini 3",
-        "Broadlink",
-        "RMMINIB",
-        0x5F36,
-        44017,
-        10,
-    ),
-    "Office": (
-        "192.168.0.13",
-        "34ea34b43d22",
-        "RM pro",
-        "Broadlink",
-        "RMPRO",
-        0x2787,
-        20025,
-        7,
-    ),
-    "Garage": (
-        "192.168.0.14",
-        "34ea34c43f31",
-        "RM4 pro",
-        "Broadlink",
-        "RM4PRO",
-        0x6026,
-        52,
-        4,
-    ),
-    "Bedroom": (
-        "192.168.0.15",
-        "34ea34b45d2c",
-        "e-Sensor",
-        "Broadlink",
-        "A1",
-        0x2714,
-        20025,
-        5,
-    ),
-    "Dining room": (
-        "192.168.0.16",
-        "34ea34b4fd1c",
-        "SCB1E",
-        "Broadlink",
-        "SP4B",
-        0x5115,
-        57,
-        5,
-    ),
-    "Kitchen": (  # Not supported.
-        "192.168.0.64",
-        "34ea34b61d2c",
-        "SB800TD",
-        "Broadlink",
-        "SB800TD",
-        0x504E,
-        57,
-        5,
-    ),
-    "Gaming room": (
-        "192.168.0.65",
-        "34ea34b61d2d",
-        "MP1-1K4S",
-        "Broadlink",
-        "MP1",
-        0x4EB5,
-        57,
-        5,
-    ),
-    "Guest room": (
-        "192.168.0.66",
-        "34ea34b61d2e",
-        "HY02/HY03",
-        "Hysen",
-        "HYS",
-        0x4EAD,
-        10024,
-        5,
-    ),
-    "Study": (
-        "192.168.0.17",
-        "34ea34b61d2f",
-        "RM5 plus",
-        "Broadlink",
-        "RM5PLUS",
-        0x5224,
-        57,
-        5,
-    ),
-}
+
+@dataclass(frozen=True)
+class Remote:
+    """A device as the built-in integration stores it."""
+
+    name: str
+    product_id: int
+    mac: str
+    host: str
 
 
-def _async_api_methods() -> frozenset[str]:
-    """Names of every coroutine method on any device class in the library."""
-    names: set[str] = set()
-    for _, cls in inspect.getmembers(blk, inspect.isclass):
-        if issubclass(cls, blk.Device):
-            names.update(
-                name for name, _ in inspect.getmembers(cls, inspect.iscoroutinefunction)
-            )
-    return frozenset(names)
+_GENDEVICE = blk.gendevice
+
+GARAGE = Remote("Garage", 0x520B, "34ea34c43f31", "192.168.0.10")  # RM4 pro
+ENTRANCE = Remote("Entrance", 0x5F36, "34ea34b61d2e", "192.168.0.11")  # RM mini 3
+BEDROOM = Remote("Bedroom", 0x7568, "34ea34b4b9c8", "192.168.0.12")  # SP4 plug
 
 
-ASYNC_API_METHODS = _async_api_methods()
+class FakeWindow:
+    """Stands in for the library's capture and capture_rf generators."""
 
+    def __init__(self) -> None:
+        """Initialize."""
+        self.queue: asyncio.Queue[CapturedSignal | None] = asyncio.Queue()
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+        self.closed = 0
+        self.error: Exception | None = None
 
-def mock_api_base() -> MagicMock:
-    """Return a mock device whose coroutine methods await to plain mocks.
+    def factory(self, name: str):
+        """Return a replacement for api.capture or api.capture_rf."""
 
-    Attributes such as ``host`` and ``mac`` stay ordinary values; every
-    method that is a coroutine on the real library becomes an ``AsyncMock``
-    returning a ``MagicMock``, so code that reads the result (``data.get``)
-    does not receive another coroutine.
-    """
-    mock_api = MagicMock()
-    for name in ASYNC_API_METHODS:
-        setattr(mock_api, name, AsyncMock(return_value=MagicMock()))
-    return mock_api
+        def start(*args: Any, **kwargs: Any) -> AsyncGenerator[CapturedSignal]:
+            self.calls.append((name, args, kwargs))
+            return self._run(kwargs.get("stop_after_first", True))
+
+        return start
+
+    async def _run(self, stop_after_first: bool) -> AsyncGenerator[CapturedSignal]:
+        try:
+            while True:
+                if self.error is not None:
+                    raise self.error
+                signal = await self.queue.get()
+                if signal is None:
+                    return
+                yield signal
+                if stop_after_first:
+                    return
+        finally:
+            self.closed += 1
+
+    def send(self, signal: CapturedSignal | None) -> None:
+        """Deliver a signal, or close the window with None."""
+        self.queue.put_nowait(signal)
 
 
 @dataclass
-class MockSetup:
-    """Representation of a mock setup."""
+class FakeApis:
+    """The library devices BroadSniff opened, by MAC."""
 
-    api: MagicMock
-    entry: MockConfigEntry
-    factory: MagicMock
+    apis: dict[str, MagicMock] = field(default_factory=dict)
+    windows: dict[str, FakeWindow] = field(default_factory=dict)
 
-
-class BroadlinkDevice:
-    """Representation of a Broadlink device."""
-
-    def __init__(
-        self,
-        name: str,
-        host: str,
-        mac: str,
-        model: str,
-        manufacturer: str,
-        type_: str,
-        devtype: int,
-        fwversion: int,
-        timeout: int,
-    ) -> None:
-        """Initialize the device."""
-        self.name = name
-        self.host = host
-        self.mac = mac
-        self.model = model
-        self.manufacturer = manufacturer
-        self.type = type_
-        self.devtype = devtype
-        self.timeout = timeout
-        self.fwversion = fwversion
-
-    async def setup_entry(
-        self,
-        hass: HomeAssistant,
-        mock_api: MagicMock | None = None,
-        mock_entry: MockConfigEntry | None = None,
-    ) -> MockSetup:
-        """Set up the device."""
-        mock_api = mock_api or self.get_mock_api()
-        mock_entry = mock_entry or self.get_mock_entry()
-        mock_entry.add_to_hass(hass)
-
-        with patch(
-            "custom_components.broadlink_capture.device.blk.gendevice",
-            return_value=mock_api,
-        ) as mock_factory:
-            await hass.config_entries.async_setup(mock_entry.entry_id)
-            await hass.async_block_till_done()
-
-        return MockSetup(mock_api, mock_entry, mock_factory)
-
-    def get_mock_api(self):
-        """Return a mock device (API)."""
-        mock_api = mock_api_base()
-        mock_api.name = self.name
-        mock_api.host = (self.host, 80)
-        mock_api.mac = bytes.fromhex(self.mac)
-        mock_api.model = self.model
-        mock_api.manufacturer = self.manufacturer
-        mock_api.type = self.type
-        mock_api.devtype = self.devtype
-        mock_api.timeout = self.timeout
-        mock_api.is_locked = False
-        mock_api.auth.return_value = True
-        mock_api.get_fwversion.return_value = self.fwversion
-        return mock_api
-
-    def get_mock_entry(self):
-        """Return a mock config entry."""
-        return MockConfigEntry(
-            domain=DOMAIN,
-            unique_id=self.mac,
-            title=self.name,
-            data=self.get_entry_data(),
-        )
-
-    def get_entry_data(self):
-        """Return entry data."""
-        return {
-            "host": self.host,
-            "mac": self.mac,
-            "type": self.devtype,
-            "timeout": self.timeout,
-        }
+    def create(
+        self, product_id: int, host: tuple[str, int], mac: bytes, name: str = ""
+    ) -> MagicMock:
+        """Build a fake device the way gendevice would."""
+        real = _GENDEVICE(product_id, host, mac, name=name)
+        window = FakeWindow()
+        api = MagicMock()
+        api.type = real.type
+        api.manufacturer = real.manufacturer
+        api.model = real.model
+        api.host = host
+        api.auth = AsyncMock(return_value=True)
+        api.aclose = AsyncMock()
+        api.capture = MagicMock(side_effect=window.factory("capture"))
+        api.capture_rf = MagicMock(side_effect=window.factory("capture_rf"))
+        self.apis[mac.hex()] = api
+        self.windows[mac.hex()] = window
+        return api
 
 
-class BroadlinkMP1BG1Device(BroadlinkDevice):
-    """Mock device for MP1 and BG1 with special mocking of api return values."""
+async def add_remote(hass: HomeAssistant, remote: Remote) -> MockConfigEntry:
+    """Set up a device in the built-in integration stub."""
+    entry = MockConfigEntry(
+        domain=BROADLINK_DOMAIN,
+        title=remote.name,
+        unique_id=remote.mac,
+        data={
+            CONF_HOST: remote.host,
+            CONF_MAC: remote.mac,
+            CONF_TYPE: remote.product_id,
+            CONF_TIMEOUT: 10,
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
 
-    def get_mock_api(self):
-        """Return a mock device (API) with support for check_power calls."""
-        mock_api = super().get_mock_api()
-        mock_api.check_power.return_value = {"s1": 0, "s2": 0, "s3": 0, "s4": 0}
-        return mock_api
 
-
-class BroadlinkSP4BDevice(BroadlinkDevice):
-    """Mock device for SP4b with special mocking of api return values."""
-
-    def get_mock_api(self):
-        """Return a mock device (API) with support for get_state calls."""
-        mock_api = super().get_mock_api()
-        mock_api.get_state.return_value = {"pwr": 0}
-        return mock_api
-
-
-def get_device(name):
-    """Get a device by name."""
-    dev_type = BROADLINK_DEVICES[name][5]
-    if dev_type == 0x4EB5:
-        return BroadlinkMP1BG1Device(name, *BROADLINK_DEVICES[name])
-    if dev_type == 0x5115:
-        return BroadlinkSP4BDevice(name, *BROADLINK_DEVICES[name])
-    return BroadlinkDevice(name, *BROADLINK_DEVICES[name])
+async def setup_capture(
+    hass: HomeAssistant, options: dict[str, Any] | None = None
+) -> MockConfigEntry:
+    """Set up BroadSniff."""
+    entry = MockConfigEntry(domain=DOMAIN, title="BroadSniff", options=options or {})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry

@@ -1,0 +1,68 @@
+{
+  "entity": {
+    "event": {
+      "ir_capture": {
+        "default": "mdi:remote",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "signal": "mdi:check-circle",
+              "window_ended": "mdi:timer-check-outline"
+            }
+          }
+        }
+      },
+      "rf_capture": {
+        "default": "mdi:radio-tower",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "signal": "mdi:check-circle",
+              "window_ended": "mdi:timer-check-outline"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "capture_window": {
+        "default": "mdi:timer-outline"
+      },
+      "rf_custom_frequency": {
+        "default": "mdi:sine-wave"
+      }
+    },
+    "select": {
+      "capture_mode": {
+        "default": "mdi:format-list-numbered",
+        "state": {
+          "single": "mdi:numeric-1-box-outline",
+          "multiple": "mdi:numeric-9-plus-box-multiple-outline",
+          "sliding": "mdi:timer-refresh-outline"
+        }
+      },
+      "rf_frequency": {
+        "default": "mdi:radio-tower"
+      }
+    },
+    "sensor": {
+      "codes_captured": {
+        "default": "mdi:counter"
+      }
+    },
+    "switch": {
+      "ir_capture": {
+        "default": "mdi:record-rec",
+        "state": {
+          "on": "mdi:access-point"
+        }
+      },
+      "rf_capture": {
+        "default": "mdi:record-rec",
+        "state": {
+          "on": "mdi:access-point"
+        }
+      }
+    }
+  }
+}

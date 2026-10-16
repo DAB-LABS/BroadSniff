@@ -2,7 +2,7 @@
 
 A device has one receiver, so it runs at most one capture window at a time,
 infrared or radio frequency. The library owns the window (arming, polling,
-re-arming, stop-after-first, sliding and taking the device out of learning
+re-arming, closing after one code or on a sliding deadline, and taking the device out of learning
 mode when it closes); this runs it as a background task, keeps the settings
 the entities change, and tells listeners about signals and windows.
 """
@@ -24,22 +24,16 @@ from broadlink_async.exceptions import (
     ConnectionClosedError,
     EndpointClosedError,
 )
-from broadlink_async.remote import CapturedSignal
+from broadlink_async.remote import CapturedSignal, SignalKind
 
 from homeassistant.core import CALLBACK_TYPE, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    DEFAULT_CAPTURE_WINDOW,
-    DEFAULT_SLIDING_WINDOW,
-    DEFAULT_STOP_AFTER_FIRST,
-    DOMAIN,
-    RF_LEARN_FREQUENCY_SWEEP,
-)
+from .const import DEFAULT_CAPTURE_WINDOW, DEFAULT_RF_CUSTOM_FREQUENCY, DOMAIN
 
 if TYPE_CHECKING:
-    from .device import BroadlinkDevice
+    from .device import BroadlinkRemote
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +43,35 @@ class CaptureKind(StrEnum):
 
     IR = "ir"
     RF = "rf"
+
+
+class CaptureMode(StrEnum):
+    """How many codes a capture window takes and when it closes."""
+
+    # Close after the first code.
+    SINGLE = "single"
+    # Take every code until the window runs out.
+    MULTIPLE = "multiple"
+    # Take every code; each one restarts the countdown.
+    SLIDING = "sliding"
+
+
+DEFAULT_CAPTURE_MODE = CaptureMode.SLIDING
+
+
+class RFFrequency(StrEnum):
+    """The carrier an RF capture window listens on."""
+
+    MHZ_433_92 = "mhz_433_92"
+    MHZ_315 = "mhz_315"
+    # The remote finds the carrier while a button is held.
+    SWEEP = "sweep"
+    # The carrier set on the custom frequency entity.
+    CUSTOM = "custom"
+
+
+DEFAULT_RF_FREQUENCY = RFFrequency.MHZ_433_92
+RF_PRESET_CARRIERS = {RFFrequency.MHZ_433_92: 433.92, RFFrequency.MHZ_315: 315.0}
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,22 +87,33 @@ type SignalListener = Callable[[CapturedSignal, CaptureKind], None]
 type EndedListener = Callable[[CaptureWindowResult], None]
 
 
-class BroadlinkCapture:
+class CaptureManager:
     """Runs capture windows on one device and fans out what they catch."""
 
-    def __init__(self, device: BroadlinkDevice) -> None:
+    def __init__(self, device: BroadlinkRemote) -> None:
         """Initialize with the default settings."""
         self._device = device
         self.window: float = DEFAULT_CAPTURE_WINDOW
-        self.stop_after_first: bool = DEFAULT_STOP_AFTER_FIRST
-        self.sliding: bool = DEFAULT_SLIDING_WINDOW
-        self.rf_frequency: float = RF_LEARN_FREQUENCY_SWEEP
+        self.mode: CaptureMode = DEFAULT_CAPTURE_MODE
+        self.rf_frequency: RFFrequency = DEFAULT_RF_FREQUENCY
+        self.rf_custom_frequency: float = DEFAULT_RF_CUSTOM_FREQUENCY
         self._task: asyncio.Task[int] | None = None
+        # Codes caught by the open window, or by the last one once it closes.
+        self.codes: int = 0
         self._kind: CaptureKind | None = None
         self._ends_at: datetime | None = None
         self._signal_listeners: list[SignalListener] = []
         self._state_listeners: list[CALLBACK_TYPE] = []
         self._ended_listeners: list[EndedListener] = []
+
+    @property
+    def rf_carrier(self) -> float | None:
+        """Return the carrier to listen on in MHz, or None to sweep for it."""
+        if self.rf_frequency is RFFrequency.SWEEP:
+            return None
+        if self.rf_frequency is RFFrequency.CUSTOM:
+            return self.rf_custom_frequency
+        return RF_PRESET_CARRIERS[self.rf_frequency]
 
     @property
     def kind(self) -> CaptureKind | None:
@@ -111,8 +145,7 @@ class BroadlinkCapture:
         kind: CaptureKind,
         *,
         window: float | None = None,
-        stop_after_first: bool | None = None,
-        sliding: bool | None = None,
+        mode: CaptureMode | None = None,
         on_signal: Callable[[CapturedSignal], None] | None = None,
     ) -> asyncio.Task[int]:
         """Open a capture window, closing any window already open.
@@ -122,17 +155,24 @@ class BroadlinkCapture:
         and raises HomeAssistantError if the device failed during it.
         """
         await self.async_stop()
+        try:
+            await self._device.async_ensure_auth()
+        except (BroadlinkException, OSError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="capture_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         window = self.window if window is None else window
-        stop_after_first = (
-            self.stop_after_first if stop_after_first is None else stop_after_first
-        )
-        sliding = self.sliding if sliding is None else sliding
+        mode = self.mode if mode is None else mode
+        stop_after_first = mode is CaptureMode.SINGLE
+        sliding = mode is CaptureMode.SLIDING
         api = self._device.api
         signals: AsyncGenerator[CapturedSignal]
         if kind is CaptureKind.RF:
             signals = api.capture_rf(
                 window,
-                frequency=self.rf_frequency or None,
+                frequency=self.rf_carrier,
                 stop_after_first=stop_after_first,
                 extend_on_signal=sliding,
             )
@@ -142,11 +182,12 @@ class BroadlinkCapture:
             )
         self._kind = kind
         self._ends_at = _deadline(window)
+        self.codes = 0
         self._notify_state()
-        task = self._device.config.async_create_background_task(
+        task = self._device.entry.async_create_background_task(
             self._device.hass,
             self._async_run(signals, kind, window, sliding, on_signal),
-            name=f"broadlink_capture {kind} window {self._device.name}",
+            name=f"broadsniff {kind} window {self._device.name}",
         )
         self._task = task
         return task
@@ -177,9 +218,10 @@ class BroadlinkCapture:
             async with aclosing(signals):
                 async for signal in signals:
                     caught += 1
+                    self.codes = caught
                     if sliding:
                         self._ends_at = _deadline(window)
-                        self._notify_state()
+                    self._notify_state()
                     self._publish(signal, kind, on_signal)
         except asyncio.CancelledError:
             stopped = True
@@ -227,6 +269,11 @@ class BroadlinkCapture:
             _call(listener)
 
 
+def signal_kind(signal: CapturedSignal) -> CaptureKind:
+    """Return the band a captured signal belongs to."""
+    return CaptureKind.IR if signal.kind is SignalKind.IR else CaptureKind.RF
+
+
 def _deadline(window: float) -> datetime | None:
     """Return when a window of this length opened now would close."""
     if window <= 0:
@@ -251,4 +298,4 @@ def _call(listener: Callable[..., None], *args: object) -> None:
     try:
         listener(*args)
     except Exception:
-        _LOGGER.exception("Error in a Broadlink capture listener")
+        _LOGGER.exception("Error in a BroadSniff capture listener")

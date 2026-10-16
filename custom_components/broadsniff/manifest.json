@@ -1,0 +1,15 @@
+{
+  "domain": "broadsniff",
+  "name": "BroadSniff",
+  "codeowners": ["@DAB-LABS"],
+  "config_flow": true,
+  "dependencies": ["broadlink"],
+  "documentation": "https://github.com/DAB-LABS/broadsniff",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/DAB-LABS/broadsniff/issues",
+  "loggers": ["broadlink_async"],
+  "requirements": ["broadlink-async>=1.1.0"],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

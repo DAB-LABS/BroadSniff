@@ -7,3 +7,16 @@ __pycache__/
 
 # Internal notes and drafts, never published
 docs/internal/
+
+# Build and editor output
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# Local backups
+.backups/
+trash/

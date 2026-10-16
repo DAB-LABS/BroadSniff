@@ -1,33 +1,28 @@
 # Changelog
 
-Versions follow the Home Assistant release the integration is based on.
+## 0.1.0
 
-## Unreleased
+The first release of BroadSniff: IR and RF capture for Broadlink universal
+remotes, alongside Home Assistant's built-in Broadlink integration.
 
-### Added
+- Adds capture to every remote set up in the built-in Broadlink
+  integration, including remotes added later. Remotes can be left out in
+  the options.
+- Each remote gets a device linked to the built-in one by MAC address,
+  starting in the same area, with IR capture and RF capture switches, a
+  Codes captured counter, IR capture and RF capture events, and an IR
+  receiver on Home Assistant's infrared platform.
+- Settings: a capture window of 1 to 60 seconds (10 by default); a capture
+  mode of keep listening and restart the timer after each code (the
+  default), keep listening until time runs out, or stop after the first
+  code; and an RF frequency of 433.92 MHz (the default), 315 MHz, sweep or
+  a custom carrier.
+- Captured codes come in the `b64:...` form that `remote.send_command`
+  accepts.
+- Capture entities follow the built-in integration's availability, and the
+  devices of removed or excluded remotes are cleaned up.
+- Requires Home Assistant 2026.10 or newer and `broadlink-async` 1.1.0 or
+  newer.
 
-- Capture on RM remotes: Capture and RF capture switches, capture window,
-  stop after first signal, sliding window and RF learn frequency settings,
-  IR and RF capture event entities, and an IR receiver entity on the
-  infrared platform. Settings are restored across restarts.
-- `remote.learn_command` runs through the same capture windows, so it uses
-  the RF learn frequency when one is set, and closing a window takes the
-  device out of learning mode.
-
-### Base
-
-Starts from the Broadlink source in Home Assistant 2026.10.1 plus
-home-assistant/core#186053 (the switch to `broadlink-async`).
-
-- The integration is renamed to the `broadlink_capture` domain, named
-  Broadlink +Capture, so it installs next to the built-in Broadlink
-  integration instead of replacing it.
-- Learned codes are stored under `broadlink_capture_remote_<id>_codes` and
-  `_flags`, separate from the built-in integration's storage, so a device
-  set up in both cannot overwrite the other's codes.
-- Requires `broadlink-async>=1.1.0` instead of an exact pin, so it uses
-  whatever version the built-in integration has installed.
-- English translations ship as `translations/en.json`, resolved from core's
-  `strings.json`.
-- Tests are core's Broadlink tests, run against the renamed integration with
-  `pytest-homeassistant-custom-component`.
+BroadSniff started as Broadlink +Capture, a full copy of the Broadlink
+integration with capture added. It was never released in that form.

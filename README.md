@@ -1,80 +1,217 @@
-# Broadlink +Capture
+# BroadSniff
 
-A Home Assistant integration for Broadlink devices that adds capture: put an
-RM remote into listening mode from Home Assistant and get the IR and RF codes
-it hears, ready to send back or use in automations.
+BroadSniff lets Home Assistant hear what your Broadlink universal remote
+hears. Turn on capture, point any IR or RF remote at your Broadlink RM,
+press buttons, and BroadSniff hands you each code: ready to send back, to
+trigger automations, or to pass to [HAIR](https://github.com/DAB-LABS/HAIR)
+and anything else that listens on Home Assistant's infrared platform.
 
-It supports every Broadlink device the built-in Broadlink integration
-supports, so you can use it instead of the built-in one for all of your
-Broadlink devices.
+It is a small custom integration that works alongside Home Assistant's
+built-in Broadlink integration. Your remotes stay set up there; BroadSniff
+only adds capture.
 
-> **This is a temporary integration.** Home Assistant's infrared platform
-> does not yet have a way to represent a receiver that only listens on
-> demand, which is how Broadlink devices learn codes. Until it does, this
-> integration fills the gap. Once the built-in Broadlink integration supports
-> capture, Broadlink +Capture will be sunset and you will be asked to move
-> back to the built-in integration. A migration will be provided.
+## Why BroadSniff exists
 
-## Capture
+Broadlink RM remotes can learn codes, but only in a learning mode: you
+ask the remote to listen, it waits for one press, and then it stops. They
+cannot listen all the time.
 
-Each RM remote gets these entities on top of what the built-in integration
-provides:
+Home Assistant's built-in Broadlink integration sends IR and RF codes well,
+and it can learn codes with `remote.learn_command`, which stores them for
+that one remote. What it cannot do is hand a captured code to the rest of
+Home Assistant: there is no event when a code arrives, and nothing on the
+infrared platform for other integrations to listen to.
 
-- **Capture** switch: turn it on and the device listens for infrared codes.
-  It turns off by itself when the window closes, and turning it off stops
-  the device listening.
-- **RF capture** switch (RM pro and RM4 pro): the same for radio frequency.
-- **Capture window**: how long a window stays open, 1 to 300 seconds.
-- **Stop after first signal**: on by default, so the window closes after one
-  code. Turn it off to catch several codes in one window.
-- **Sliding window**: each code restarts the countdown, handy for learning a
-  whole remote in one go.
-- **RF learn frequency** (RM pro and RM4 pro): `0` sweeps for the carrier
-  while you hold the button; set it (for example `433.92`) to skip the sweep.
-- **IR capture** and **RF capture** events: fire with the captured code in
-  the `b64:...` form that `remote.send_command` accepts, and again when a
-  window ends, with how many codes it caught.
-- **IR receiver**: publishes captured infrared codes on Home Assistant's
-  infrared platform, so integrations that listen for infrared can use them.
-  Unlike an always-on receiver it only hears codes while a capture window is
-  open; its `capturing` attribute shows when that is.
+The reason is architectural. Home Assistant's infrared platform has a
+receiver entity, but it is designed for receivers that are always
+listening, like an ESPHome board with an IR receiver. A device that only
+listens when asked, as every Broadlink remote does, has no proper place in
+it yet. Until it does, a capture feature does not belong in the built-in
+integration.
 
-`remote.learn_command` works as in the built-in integration and uses the
-same capture windows, so a learn and a capture never run at the same time
-on one device.
+BroadSniff fills that gap from the outside. It opens a capture window on
+request, publishes every code it catches as an event, and offers an IR
+receiver on the infrared platform that hears codes while a window is open.
+
+## Where this is going
+
+BroadSniff is meant to be temporary. A proposal is in progress for Home
+Assistant's infrared platform to let a receiver say that it captures on
+demand rather than listening all the time, with the capture action built
+into the receiver itself. If that lands, capture can move into the
+built-in Broadlink integration, and BroadSniff will be retired.
+
+Retiring it will be easy. BroadSniff never changes your Broadlink setup,
+so removing it leaves your remotes and the built-in integration exactly as
+they are. You would only need to point automations and HAIR at the new
+entities.
+
+BroadSniff and the built-in integration use the same library to talk to
+the remote, [broadlink-async](https://github.com/DAB-LABS/broadlink-async),
+from Home Assistant 2026.10.2 on.
+
+## Requirements
+
+- Home Assistant 2026.10 or newer.
+- At least one Broadlink universal remote set up in the built-in Broadlink
+  integration: RM mini, RM pro, RM4 mini, RM4 pro, RM5 plus and similar.
+  RF capture needs an RM pro or RM4 pro.
 
 ## Installation
 
 1. In HACS, open the menu, choose **Custom repositories**, and add
-   `https://github.com/DAB-LABS/broadlink-capture` as an **Integration**.
-2. Install **Broadlink +Capture** and restart Home Assistant.
+   `https://github.com/DAB-LABS/broadsniff` as an **Integration**.
+2. Install **BroadSniff** and restart Home Assistant.
 3. Go to **Settings > Devices & services > Add integration** and choose
-   **Broadlink +Capture**.
+   **BroadSniff**.
 
-Requires Home Assistant 2026.10 or newer.
+One setup covers every remote in the Broadlink integration, including ones
+you add later. To leave a remote out, open **Configure** on BroadSniff and
+pick it.
 
-## Using it alongside the built-in Broadlink integration
+## What you get
 
-Both integrations can be installed at the same time, but each device should
-be set up in only one of them. Learning mode applies to the whole device, so
-a capture in one and a learn in the other at the same moment would get in
-each other's way. Both may show the same device as discovered; you can
-ignore it in the one you are not using.
+Home Assistant gives each integration its own device. BroadSniff adds a
+device with the same name as your remote, in the same area, and Home
+Assistant shows the two as linked devices because they share the remote's
+MAC address. Open it from the remote's device page or from
+**Settings > Devices & services > BroadSniff**.
 
-Codes learned with the built-in integration are not shared with this one,
-and the other way round.
+Each remote gets:
 
-## Devices
+- **IR capture**: a switch. Turn it on and the remote listens for infrared
+  codes. Its icon changes while it listens. It turns off by itself when the
+  window closes, and turning it off stops the remote listening.
+- **RF capture** (RM pro and RM4 pro): the same for radio frequency.
+- **Codes captured**: counts the codes the open window has caught, so you
+  can watch it go up as you press buttons. It goes back to zero when a new
+  window opens and keeps the total once the window closes.
+- **IR capture** and **RF capture** events: fire with each code, and again
+  when a window closes with how many codes it caught.
+- **IR receiver**: publishes captured infrared codes on Home Assistant's
+  infrared platform. It only hears codes while a capture window is open;
+  its `capturing` attribute shows when that is.
 
-The same devices as the built-in integration: RM universal remotes (RM mini,
-RM pro, RM4 mini, RM4 pro, RM5 plus and others), smart plugs and power
-strips, the A1 and A2 sensors, Hysen thermostats, and LB1/LB2 bulbs.
+And these settings, which are remembered across restarts:
+
+- **Capture window**: how long a window stays open, 1 to 60 seconds.
+  10 by default.
+- **Capture mode**:
+  - **Keep listening, restart timer after each code** (default). Each code
+    restarts the countdown, so you can capture a whole remote in one go.
+    With the default window, it closes 10 seconds after your last press.
+  - **Keep listening until time runs out**: catches several codes in a
+    window of fixed length.
+  - **Stop after the first code**: closes as soon as it hears one code.
+- **RF frequency** (RM pro and RM4 pro): the carrier RF capture listens on.
+  - **433.92 MHz** (default): most remotes.
+  - **315 MHz**: many US garage and gate remotes.
+  - **Sweep**: the remote searches for the carrier. Hold the button for a
+    few seconds, release it, then press it once more. Slower, and less
+    reliable on some firmware.
+  - **Custom**: uses **RF custom frequency**, 300 to 450 MHz. That entity
+    is disabled until you need it; enable it on the device page.
+
+The capture entities follow the built-in integration: when Broadlink has a
+remote unavailable, so are its capture entities.
+
+## How to use it
+
+### Capture an IR code
+
+1. Open your remote's BroadSniff device.
+2. Turn on **IR capture**.
+3. Point the remote you want to capture at the Broadlink and press a
+   button.
+4. Watch **Codes captured** go to 1. The **IR capture** event now holds the
+   code, in its `code` attribute.
+
+To read the code, open the **IR capture** event, choose the
+three-dot menu, and look at **Attributes**, or find it in
+**Developer tools > States**.
+
+### Capture a whole remote
+
+Leave **Capture mode** on **Keep listening, restart timer after each
+code**, turn on **IR capture**, and press the buttons one after another.
+Each press adds one to **Codes captured** and restarts the countdown. When
+you stop pressing, the window closes 10 seconds later. Every code is in
+the history of the **IR capture** event.
+
+### Capture an RF code
+
+Turn on **RF capture** and press the button on your RF remote. Most
+remotes use 433.92 MHz, the default. If nothing arrives, try 315 MHz, or
+**Sweep** if you do not know the frequency. The **RF capture** event holds
+the code and the carrier it was heard on, in `frequency_mhz`.
+
+### Send a code back
+
+Codes come in the `b64:...` form that the built-in integration's
+`remote.send_command` accepts, for IR and RF alike:
+
+```yaml
+action: remote.send_command
+target:
+  entity_id: remote.living_room
+data:
+  command: "b64:JgBQAAAB..."
+```
+
+### Use a capture in an automation
+
+The event entities change state every time they fire, and `event_type`
+says what happened: `signal` for a code, `window_ended` when a window
+closes.
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: event.living_room_ir_capture
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'signal' }}"
+actions:
+  - action: notify.persistent_notification
+    data:
+      message: "Captured {{ trigger.to_state.attributes.code }}"
+```
+
+### Use it with HAIR
+
+[HAIR](https://github.com/DAB-LABS/HAIR) listens on Home Assistant's
+infrared platform, so it sees BroadSniff's **IR receiver** like any other.
+Add the receiver to the remotes and triggers you want it to serve in HAIR,
+then turn on **IR capture** whenever you want HAIR to hear the Broadlink.
+
+## Good to know
+
+- BroadSniff keeps its own connection to each remote for capture. The
+  built-in integration keeps its connection for everything else.
+- Learning mode applies to the whole remote. Avoid running
+  `remote.learn_command` from the built-in integration while a capture
+  window is open on the same remote.
+- While a window is open, the Broadlink hears everything in range,
+  including codes it sends itself. If something sends through the same
+  Broadlink during a capture, for example an automation or a HAIR remote
+  that repeats what it hears, you may capture that too.
+- A remote that is locked in the Broadlink app can fail to authenticate,
+  for the built-in integration and BroadSniff alike. Unlock it in the
+  app if capture reports an error.
+
+## Removing
+
+Delete BroadSniff under **Settings > Devices & services** and remove it
+from HACS. Its devices and entities go with it. Your remotes and the
+built-in Broadlink integration stay as they are.
 
 ## Credits
 
-Based on the Broadlink integration that ships with Home Assistant. See
-`NOTICE.md`. Device communication uses
-[broadlink-async](https://github.com/DAB-LABS/broadlink-async).
+Device communication uses
+[broadlink-async](https://github.com/DAB-LABS/broadlink-async). Thanks to
+the authors and code owners of Home Assistant's Broadlink integration.
+
+BroadSniff is not affiliated with or endorsed by Broadlink.
 
 ## License
 
