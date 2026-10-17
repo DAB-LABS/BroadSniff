@@ -5,6 +5,7 @@
 - The README opens with installation: a button that opens BroadSniff in
   HACS, the steps to add it as a custom repository or by hand, and a
   button that starts the setup.
+- The README explains what RF capture can and cannot do today.
 - The validation workflow can be started by hand.
 
 ## 0.1.0

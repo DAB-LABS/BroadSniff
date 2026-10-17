@@ -10,6 +10,14 @@ It is a small custom integration that works alongside Home Assistant's
 built-in Broadlink integration. Your remotes stay set up there; BroadSniff
 only adds capture.
 
+> [!NOTE]
+> BroadSniff captures RF codes too, but Home Assistant has no RF receiver
+> yet: its radio frequency platform can only send. So RF codes stay with
+> your Broadlink. You can read them, trigger automations from them while a
+> capture window is open, and send them back through an RM pro or RM4 pro
+> with `remote.send_command`. They do not reach HAIR or other integrations
+> the way IR codes do. That needs an RF receiver in Home Assistant first.
+
 ## Install
 
 ### HACS (recommended)
@@ -86,6 +94,10 @@ demand rather than listening all the time, with the capture action built
 into the receiver itself. If that lands, capture can move into the
 built-in Broadlink integration, and BroadSniff will be retired.
 
+RF needs one more step. Home Assistant's radio frequency platform sends
+codes but cannot receive them yet. Once it has a receiver, BroadSniff's RF
+captures can be published there the same way IR captures are today.
+
 Retiring it will be easy. BroadSniff never changes your Broadlink setup,
 so removing it leaves your remotes and the built-in integration exactly as
 they are. You would only need to point automations and HAIR at the new
@@ -108,7 +120,8 @@ Each remote gets:
 - **IR capture**: a switch. Turn it on and the remote listens for infrared
   codes. Its icon changes while it listens. It turns off by itself when the
   window closes, and turning it off stops the remote listening.
-- **RF capture** (RM pro and RM4 pro): the same for radio frequency.
+- **RF capture** (RM pro and RM4 pro): the same for radio frequency, with
+  the limits in the note at the top.
 - **Codes captured**: counts the codes the open window has caught, so you
   can watch it go up as you press buttons. It goes back to zero when a new
   window opens and keeps the total once the window closes.
@@ -209,6 +222,7 @@ actions:
 infrared platform, so it sees BroadSniff's **IR receiver** like any other.
 Add the receiver to the remotes and triggers you want it to serve in HAIR,
 then turn on **IR capture** whenever you want HAIR to hear the Broadlink.
+HAIR works with IR. RF captures stay in BroadSniff for now.
 
 ## Good to know
 
