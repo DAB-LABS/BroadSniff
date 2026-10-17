@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - Unreleased
+
+- The README opens with installation: a button that opens BroadSniff in
+  HACS, the steps to add it as a custom repository or by hand, and a
+  button that starts the setup.
+- The validation workflow can be started by hand.
+
 ## 0.1.0
 
 The first release of BroadSniff: IR and RF capture for Broadlink universal

@@ -10,6 +10,51 @@ It is a small custom integration that works alongside Home Assistant's
 built-in Broadlink integration. Your remotes stay set up there; BroadSniff
 only adds capture.
 
+## Install
+
+### HACS (recommended)
+
+[![Open your Home Assistant instance and open the BroadSniff repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DAB-LABS&repository=broadsniff&category=integration)
+
+Click the button above. If HACS asks, confirm adding the repository. Then
+click **Download** and restart Home Assistant.
+
+Or add it by hand:
+
+1. Open **HACS** in your Home Assistant sidebar.
+2. Open the menu (three dots, top right) and choose **Custom
+   repositories**.
+3. Add `https://github.com/DAB-LABS/broadsniff` with the type
+   **Integration**.
+4. Find **BroadSniff** in HACS, click **Download**, and restart Home
+   Assistant.
+
+### Manual
+
+1. Download the latest release from the
+   [releases page](https://github.com/DAB-LABS/broadsniff/releases).
+2. Copy `custom_components/broadsniff` into the `custom_components` folder
+   of your Home Assistant configuration.
+3. Restart Home Assistant.
+
+### Add the integration
+
+[![Open your Home Assistant instance and start setting up BroadSniff.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=broadsniff)
+
+Click the button above, or go to **Settings > Devices & services > Add
+integration** and choose **BroadSniff**.
+
+One setup covers every remote in the Broadlink integration, including ones
+you add later. To leave a remote out, open **Configure** on BroadSniff and
+pick it.
+
+### Requirements
+
+- Home Assistant 2026.10 or newer.
+- At least one Broadlink universal remote set up in the built-in Broadlink
+  integration: RM mini, RM pro, RM4 mini, RM4 pro, RM5 plus and similar.
+  RF capture needs an RM pro or RM4 pro.
+
 ## Why BroadSniff exists
 
 Broadlink RM remotes can learn codes, but only in a learning mode: you
@@ -49,25 +94,6 @@ entities.
 BroadSniff and the built-in integration use the same library to talk to
 the remote, [broadlink-async](https://github.com/DAB-LABS/broadlink-async),
 from Home Assistant 2026.10.2 on.
-
-## Requirements
-
-- Home Assistant 2026.10 or newer.
-- At least one Broadlink universal remote set up in the built-in Broadlink
-  integration: RM mini, RM pro, RM4 mini, RM4 pro, RM5 plus and similar.
-  RF capture needs an RM pro or RM4 pro.
-
-## Installation
-
-1. In HACS, open the menu, choose **Custom repositories**, and add
-   `https://github.com/DAB-LABS/broadsniff` as an **Integration**.
-2. Install **BroadSniff** and restart Home Assistant.
-3. Go to **Settings > Devices & services > Add integration** and choose
-   **BroadSniff**.
-
-One setup covers every remote in the Broadlink integration, including ones
-you add later. To leave a remote out, open **Configure** on BroadSniff and
-pick it.
 
 ## What you get
 
