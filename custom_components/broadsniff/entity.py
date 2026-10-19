@@ -25,7 +25,9 @@ class BroadSniffEntity(Entity):
     shares the MAC address with the built-in integration's device, so Home
     Assistant lists the two as linked devices, and starts with its name and
     area. The entity is available while the built-in integration has the
-    device loaded.
+    device loaded and its entities on the device are not all unavailable,
+    which is how the built-in integration says the device stopped
+    answering.
     """
 
     _attr_has_entity_name = True
@@ -45,17 +47,20 @@ class BroadSniffEntity(Entity):
     @property
     @override
     def available(self) -> bool:
-        """Return True while the built-in integration has the device loaded."""
+        """Return True while the device answers the built-in integration."""
         return self._device.available
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Follow the built-in config entry's state."""
+        """Follow the built-in config entry and the device's availability."""
         await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, SIGNAL_CONFIG_ENTRY_CHANGED, self._on_entry_changed
             )
+        )
+        self.async_on_remove(
+            self._device.async_add_availability_listener(self.async_write_ha_state)
         )
 
     @callback
