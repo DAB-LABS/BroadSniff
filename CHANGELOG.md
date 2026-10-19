@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-10-19
+
+- BroadSniff has its own icon and logo, shown in Home Assistant and HACS.
+- The README opens with the BroadSniff header.
+- The HACS validation runs every check again, brands included.
+
 ## 0.2.0 - 2026-10-19
 
 - The IR receiver follows HAIR's windowed-receiver contract, so HAIR, or
