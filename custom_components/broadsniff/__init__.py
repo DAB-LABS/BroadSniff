@@ -72,6 +72,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: BroadSniffConfigEntry) -
         )
     entry.runtime_data = BroadSniffData(remotes)
     _async_remove_stale_devices(hass, entry, remotes.values())
+    for remote in remotes.values():
+        remote.async_start()
+        entry.async_on_unload(remote.async_stop_following)
 
     snapshot = _snapshot(hass, entry)
 

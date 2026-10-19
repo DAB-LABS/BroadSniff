@@ -70,6 +70,22 @@ class RFFrequency(StrEnum):
     CUSTOM = "custom"
 
 
+# While a window is open the capture session gives each request this long,
+# so an unplugged remote shows within seconds whatever the window length.
+# A local Broadlink answers in well under a tenth of a second.
+WINDOW_REQUEST_TIMEOUT = 1.5
+# Consecutive unanswered requests that end a window as a failure. The
+# library forgives two missed polls and then lets the window run out its
+# own deadline without an error, so BroadSniff counts for itself.
+MAX_MISSED_REQUESTS = 2
+# Why a window ended when the remote went quiet under it.
+STOPPED_ANSWERING = "the remote stopped answering"
+
+
+class RemoteStoppedAnswering(Exception):
+    """Raised into a window when the remote has stopped answering it."""
+
+
 DEFAULT_RF_FREQUENCY = RFFrequency.MHZ_433_92
 RF_PRESET_CARRIERS = {RFFrequency.MHZ_433_92: 433.92, RFFrequency.MHZ_315: 315.0}
 
@@ -102,6 +118,10 @@ class CaptureManager:
         self.codes: int = 0
         self._kind: CaptureKind | None = None
         self._ends_at: datetime | None = None
+        # Unanswered requests in a row in the open window, and why the open
+        # window is being ended as a failure, if it is.
+        self._misses = 0
+        self._failure: str | None = None
         self._signal_listeners: list[SignalListener] = []
         self._state_listeners: list[CALLBACK_TYPE] = []
         self._ended_listeners: list[EndedListener] = []
@@ -167,13 +187,24 @@ class CaptureManager:
     ) -> asyncio.Task[int]:
         """Open a capture window, closing any window already open.
 
-        Settings not given come from the entities. The returned task
-        finishes when the window closes, with the number of signals caught,
-        and raises HomeAssistantError if the device failed during it.
+        Nothing is published until the remote has answered one request, so
+        a remote that does not answer opens no window and the caller gets
+        HomeAssistantError. Settings not given come from the entities. The
+        returned task finishes when the window closes, with the number of
+        signals caught; a window the remote stops answering is ended,
+        logged once and reported to the ended listeners.
         """
         await self.async_stop()
+        if not self._device.available:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="capture_failed",
+                translation_placeholders={
+                    "error": f"{self._device.name} is not answering"
+                },
+            )
         try:
-            await self._device.async_ensure_auth()
+            await self._device.async_probe()
         except (BroadlinkException, OSError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
@@ -200,6 +231,11 @@ class CaptureManager:
         self._kind = kind
         self._ends_at = _deadline(window)
         self.codes = 0
+        self._misses = 0
+        self._failure = None
+        self._device.api.timeout = min(
+            self._device.configured_timeout, WINDOW_REQUEST_TIMEOUT
+        )
         self._notify_state()
         task = self._device.entry.async_create_background_task(
             self._device.hass,
@@ -220,6 +256,32 @@ class CaptureManager:
         with suppress(asyncio.CancelledError, HomeAssistantError):
             await task
 
+    async def async_fail(self, reason: str) -> None:
+        """End the open window as a failure, if one is open."""
+        if self._task is None or self._task.done():
+            return
+        self._failure = reason
+        await self.async_stop()
+
+    @callback
+    def request_answered(self) -> None:
+        """Note that the remote answered a request."""
+        self._misses = 0
+
+    def request_failed(self, err: Exception) -> None:
+        """Note an unanswered request; end the window after too many.
+
+        Raised into the window's own request, so the library's generator
+        unwinds at once instead of polling on to its deadline. Outside a
+        window (the probe) the caller handles the error itself.
+        """
+        if self._task is None or self._failure is not None:
+            return
+        self._misses += 1
+        if self._misses >= MAX_MISSED_REQUESTS:
+            self._failure = STOPPED_ANSWERING
+            raise RemoteStoppedAnswering(STOPPED_ANSWERING) from err
+
     async def _async_run(
         self,
         signals: AsyncGenerator[CapturedSignal],
@@ -228,9 +290,16 @@ class CaptureManager:
         sliding: bool,
         on_signal: Callable[[CapturedSignal], None] | None,
     ) -> int:
-        """Consume one window and publish what it catches."""
+        """Consume one window and publish what it catches.
+
+        A window can end four ways: on its own (deadline, or the first code
+        in single mode), stopped by a caller, failed by the device, or
+        failed because the remote went unavailable. A failed window is
+        logged once as a warning and does not raise.
+        """
         caught = 0
         stopped = False
+        failure: str | None = None
         try:
             async with aclosing(signals):
                 async for signal in signals:
@@ -241,8 +310,11 @@ class CaptureManager:
                     self._notify_state()
                     self._publish(signal, kind, on_signal)
         except asyncio.CancelledError:
-            stopped = True
+            if self._failure is None:
+                stopped = True
             raise
+        except RemoteStoppedAnswering:
+            pass
         except (BroadlinkException, OSError) as err:
             # A rejected session starts the reauth flow, except when the
             # device was closed on purpose, as with any other request.
@@ -250,17 +322,26 @@ class CaptureManager:
                 err, (AuthorizationError, ConnectionClosedError)
             ) and not isinstance(err, EndpointClosedError):
                 await self._device.async_auth()
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="capture_failed",
-                translation_placeholders={"error": str(err)},
-            ) from err
+            failure = str(err)
         finally:
+            if failure is None and not stopped:
+                failure = self._failure
+            if failure is None and not stopped and self._misses:
+                # The window ran out its deadline while the remote was not
+                # answering, which the library reports as a quiet window.
+                failure = STOPPED_ANSWERING
+            self._device.api.timeout = self._device.configured_timeout
             if self._task is asyncio.current_task():
                 self._task = None
             self._kind = None
             self._ends_at = None
+            self._misses = 0
+            self._failure = None
             self._notify_state()
+            if failure is not None:
+                _LOGGER.warning(
+                    "Capture window on %s failed: %s", self._device.name, failure
+                )
             result = CaptureWindowResult(kind=kind, signals=caught, stopped=stopped)
             for listener in tuple(self._ended_listeners):
                 _call(listener, result)

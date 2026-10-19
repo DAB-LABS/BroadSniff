@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from typing import Any, override
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import BroadSniffConfigEntry
 from .capture import CaptureKind
 from .device import BroadlinkRemote
 from .entity import BroadSniffCaptureEntity
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
@@ -76,20 +72,15 @@ class BroadSniffCaptureSwitch(BroadSniffCaptureEntity, SwitchEntity):
 
     @override
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Open a window with the current settings."""
-        window = await self._device.capture.async_start(self._kind)
-        window.add_done_callback(self._log_window_result)
+        """Open a window with the current settings.
+
+        Raises if the remote does not answer, and then no window opens. A
+        window that fails later is logged by the capture manager.
+        """
+        await self._device.capture.async_start(self._kind)
 
     @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Close the window if this band's window is open."""
         if self.is_on:
             await self._device.capture.async_stop()
-
-    @callback
-    def _log_window_result(self, window: asyncio.Task[int]) -> None:
-        """Log a window that ended with a device error."""
-        if window.cancelled():
-            return
-        if (err := window.exception()) is not None:
-            _LOGGER.error("Capture window on %s failed: %s", self._device.name, err)

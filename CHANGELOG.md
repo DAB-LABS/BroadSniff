@@ -10,6 +10,14 @@
   is looked up by its unique ID each time, so renaming it is picked up at
   once, and it is left out while the switch is disabled. A capture mode
   change now reaches the receiver straight away.
+- A remote that stops answering goes offline in BroadSniff too. Its
+  entities follow the built-in Broadlink integration's entities on the
+  same device, so an unplugged remote's capture entities go unavailable
+  with them and come back with them. Turning on capture asks the remote
+  first and fails with an error if it does not answer, instead of opening
+  a window that cannot hear anything. A window whose remote stops
+  answering now ends within a few seconds, with a warning in the log,
+  where it used to run out its time as if nothing had been pressed.
 - Entity unique IDs, names and settings are unchanged, so a 0.1.0 install
   upgrades in place.
 - The README opens with installation: a button that opens BroadSniff in

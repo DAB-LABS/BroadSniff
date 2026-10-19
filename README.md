@@ -130,7 +130,9 @@ Each remote gets:
 - **IR receiver**: publishes captured infrared codes on Home Assistant's
   infrared platform. It only hears codes while a capture window is open;
   its `capturing` attribute shows when that is, and its other attributes
-  say how to open one (see [Use it with HAIR](#use-it-with-hair)).
+  say how to open one (see [Use it with HAIR](#use-it-with-hair)). While
+  the remote does not answer, its BroadSniff entities are unavailable and
+  capture cannot be turned on.
 
 And these settings, which are remembered across restarts:
 
