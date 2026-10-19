@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/DAB-LABS/BroadSniff/main/images/BroadSniff-header.png" alt="BroadSniff logo: a hockey puck remote hub wearing a chestnut pompadour, peeking up behind a ribbon banner reading BROAD·SNIFF" width="720" />
+</p>
+
 # BroadSniff
 
 BroadSniff lets Home Assistant hear what your Broadlink universal remote

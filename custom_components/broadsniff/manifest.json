@@ -11,5 +11,5 @@
   "loggers": ["broadlink_async"],
   "requirements": ["broadlink-async>=1.1.0"],
   "single_config_entry": true,
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
