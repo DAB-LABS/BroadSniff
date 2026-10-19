@@ -18,6 +18,14 @@
   a window that cannot hear anything. A window whose remote stops
   answering now ends within a few seconds, with a warning in the log,
   where it used to run out its time as if nothing had been pressed.
+- BroadSniff does not wait for the built-in integration, which takes
+  about three minutes to give up on an unplugged remote. When its own
+  request goes unanswered it asks once more a few seconds later, so a
+  single dropped exchange on Wi-Fi changes nothing; if that goes
+  unanswered too, the remote's entities go unavailable, and BroadSniff
+  asks again every 15 seconds until the remote answers or the built-in
+  integration says it is back. A refused turn-on takes under two seconds
+  and says the remote appears disconnected.
 - Entity unique IDs, names and settings are unchanged, so a 0.1.0 install
   upgrades in place.
 - The README opens with installation: a button that opens BroadSniff in

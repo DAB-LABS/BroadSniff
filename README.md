@@ -132,7 +132,10 @@ Each remote gets:
   its `capturing` attribute shows when that is, and its other attributes
   say how to open one (see [Use it with HAIR](#use-it-with-hair)). While
   the remote does not answer, its BroadSniff entities are unavailable and
-  capture cannot be turned on.
+  capture cannot be turned on. BroadSniff notices on its own: when a
+  request goes unanswered it asks again a few seconds later, and if that
+  goes unanswered too it takes the remote offline and checks back every
+  15 seconds.
 
 And these settings, which are remembered across restarts:
 

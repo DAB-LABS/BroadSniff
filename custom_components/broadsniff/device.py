@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from datetime import datetime, timedelta
 import logging
 
 import broadlink_async as blk
@@ -23,18 +24,30 @@ from homeassistant.const import (
     CONF_TYPE,
     STATE_UNAVAILABLE,
 )
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HassJob, HomeAssistant, callback
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
     entity_registry as er,
 )
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 
-from .capture import CaptureManager, CaptureKind
+from .capture import REQUEST_TIMEOUT, CaptureManager, CaptureKind
 from .const import BROADLINK_DOMAIN, DEFAULT_PORT, REMOTE_TYPES, RF_TYPES
 
 _LOGGER = logging.getLogger(__name__)
+
+# How often a remote BroadSniff found not answering is asked again.
+RECOVERY_PROBE_INTERVAL = timedelta(seconds=15)
+# A single unanswered request is not enough to call a remote offline: Wi-Fi
+# drops the odd exchange. This long after one, the remote is asked once
+# more, at the built-in entry's full timeout, and only a second silence
+# takes it offline.
+CONFIRM_DELAY = timedelta(seconds=3)
 
 
 def remote_type(core_entry: ConfigEntry) -> str | None:
@@ -92,7 +105,11 @@ class BroadlinkRemote:
             bytes.fromhex(core_entry.data[CONF_MAC]),
             name=core_entry.title,
         )
-        self.api.timeout = core_entry.data[CONF_TIMEOUT]
+        # Every request on this session (the probe before a window, the
+        # window itself, the recovery probe) is local and should be answered
+        # in well under a tenth of a second, so it gets a short timeout: a
+        # remote that does not answer is refused or ended within seconds.
+        self.api.timeout = min(core_entry.data[CONF_TIMEOUT], REQUEST_TIMEOUT)
         self.capture = CaptureManager(self)
         self._watch_requests()
         self._authorized = False
@@ -104,6 +121,13 @@ class BroadlinkRemote:
         self._availability_listeners: list[CALLBACK_TYPE] = []
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_registry: CALLBACK_TYPE | None = None
+        # Set when BroadSniff's own request went unanswered. The built-in
+        # integration takes minutes to give up on a device, so this is the
+        # faster of the two; the recovery probe clears it.
+        self._unanswered = False
+        self._unsub_recovery: CALLBACK_TYPE | None = None
+        self._recovery_probing = False
+        self._unsub_confirm: CALLBACK_TYPE | None = None
 
     @property
     def name(self) -> str:
@@ -133,19 +157,124 @@ class BroadlinkRemote:
         return self.core_entry.data[CONF_MAC]
 
     @property
-    def configured_timeout(self) -> float:
-        """Return the request timeout set in the built-in integration."""
-        return self.core_entry.data[CONF_TIMEOUT]
-
-    @property
     def available(self) -> bool:
-        """Return True while the device answers the built-in integration.
+        """Return True while the device answers.
 
-        The built-in entry stays loaded when the device stops answering;
-        only its entities go unavailable. So the device counts as available
-        while the entry is loaded and its entities are not all unavailable.
+        Two witnesses, and either can say it does not. The built-in entry
+        stays loaded when the device stops answering and only its entities
+        go unavailable, so the device answers while the entry is loaded and
+        those entities are not all unavailable. And BroadSniff's own request
+        going unanswered takes it offline at once, without waiting the
+        minutes the built-in integration takes to give up.
         """
-        return self.core_entry.state is ConfigEntryState.LOADED and self._answering
+        return (
+            self.core_entry.state is ConfigEntryState.LOADED
+            and self._answering
+            and not self._unanswered
+        )
+
+    @callback
+    def async_report_unanswered(self) -> None:
+        """Note that BroadSniff's own request went unanswered.
+
+        Called when the probe before a window, or a window's own requests,
+        went unanswered. One silence is not proof, so this only schedules a
+        confirmation probe; the remote stays available until that also
+        goes unanswered.
+        """
+        if self._unanswered or self._unsub_confirm is not None:
+            return
+        _LOGGER.debug("%s did not answer BroadSniff; confirming", self.name)
+        self._unsub_confirm = async_call_later(
+            self.hass,
+            CONFIRM_DELAY,
+            HassJob(
+                self._async_confirm,
+                f"broadsniff confirm {self.name}",
+                cancel_on_shutdown=True,
+            ),
+        )
+
+    async def _async_confirm(self, now: datetime) -> None:
+        """Ask once more, at the entry's full timeout, before going offline."""
+        self._unsub_confirm = None
+        if self._unanswered or self.capture.kind is not None:
+            # Already offline, or a window opened since: it answered.
+            return
+        self.api.timeout = self.core_entry.data[CONF_TIMEOUT]
+        try:
+            await self.api.update()
+        except NetworkTimeoutError, OSError:
+            self._go_offline()
+        except BroadlinkException as err:
+            # Any reply is an answer; a closed endpoint is BroadSniff's own.
+            _LOGGER.debug("%s answered the confirmation: %s", self.name, err)
+        else:
+            _LOGGER.debug("%s answered the confirmation; still online", self.name)
+        finally:
+            self.api.timeout = min(self.core_entry.data[CONF_TIMEOUT], REQUEST_TIMEOUT)
+
+    @callback
+    def _go_offline(self) -> None:
+        """Take the remote offline on BroadSniff's own, confirmed, evidence.
+
+        The remote is asked again every 15 seconds until it answers or the
+        built-in integration says it is back.
+        """
+        if self._unanswered:
+            return
+        self._unanswered = True
+        _LOGGER.debug("%s did not answer BroadSniff; offline", self.name)
+        self._unsub_recovery = async_track_time_interval(
+            self.hass,
+            self._async_recovery_probe,
+            RECOVERY_PROBE_INTERVAL,
+            name=f"broadsniff recovery probe {self.name}",
+            cancel_on_shutdown=True,
+        )
+        self._notify_availability()
+
+    @callback
+    def _clear_unanswered(self) -> None:
+        """Stop the recovery probe; the remote is answering again."""
+        if self._unsub_recovery is not None:
+            self._unsub_recovery()
+            self._unsub_recovery = None
+        if not self._unanswered:
+            return
+        self._unanswered = False
+        # A Broadlink forgets its session when it loses power.
+        self._authorized = False
+        _LOGGER.debug("%s answers BroadSniff again", self.name)
+        self._notify_availability()
+
+    async def _async_recovery_probe(self, now: datetime) -> None:
+        """Ask a remote that stopped answering whether it is back.
+
+        Any reply counts, even an error: a remote that refuses the old
+        session is a remote that answers. Only silence keeps it offline.
+        """
+        if self._recovery_probing or not self._unanswered:
+            return
+        self._recovery_probing = True
+        try:
+            await self.api.update()
+        except NetworkTimeoutError, OSError:
+            _LOGGER.debug("%s still does not answer", self.name)
+            return
+        except EndpointClosedError:
+            return
+        except BroadlinkException as err:
+            _LOGGER.debug("%s answered with an error: %s", self.name, err)
+        finally:
+            self._recovery_probing = False
+        self._clear_unanswered()
+
+    @callback
+    def _notify_availability(self) -> None:
+        """Tell the entities that the remote started or stopped answering."""
+        for listener in tuple(self._availability_listeners):
+            listener()
 
     @callback
     def async_start(self) -> None:
@@ -164,6 +293,12 @@ class BroadlinkRemote:
         if self._unsub_states is not None:
             self._unsub_states()
             self._unsub_states = None
+        if self._unsub_recovery is not None:
+            self._unsub_recovery()
+            self._unsub_recovery = None
+        if self._unsub_confirm is not None:
+            self._unsub_confirm()
+            self._unsub_confirm = None
 
     @callback
     def async_add_availability_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
@@ -239,9 +374,14 @@ class BroadlinkRemote:
         self._answering = answering
         if answering:
             # A Broadlink forgets its session when it loses power, so the
-            # session from before is stale.
+            # session from before is stale. The built-in integration saying
+            # the device is back also ends BroadSniff's own recovery probe.
             self._authorized = False
             _LOGGER.debug("%s answers again", self.name)
+            if self._unsub_recovery is not None:
+                self._unsub_recovery()
+                self._unsub_recovery = None
+            self._unanswered = False
         else:
             _LOGGER.debug("%s stopped answering the built-in integration", self.name)
         if not answering and self.capture.kind is not None:
@@ -250,8 +390,7 @@ class BroadlinkRemote:
                 self.capture.async_fail("the remote is unavailable"),
                 name=f"broadsniff close window {self.name}",
             )
-        for listener in tuple(self._availability_listeners):
-            listener()
+        self._notify_availability()
 
     def _watch_requests(self) -> None:
         """Tell the capture manager how each request to the device went.
@@ -276,7 +415,7 @@ class BroadlinkRemote:
         self.api.send_packet = watched
 
     async def async_probe(self) -> None:
-        """Make one real request, at the configured timeout.
+        """Make one real request, at the short timeout.
 
         A session the device has forgotten, after a power loss, is opened
         again once and the request retried. Raises what the device or the

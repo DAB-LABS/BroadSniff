@@ -114,6 +114,9 @@
     }
   },
   "exceptions": {
+    "capture_disconnected": {
+      "message": "Capture failed: {name} appears disconnected"
+    },
     "capture_failed": {
       "message": "Capture failed: {error}"
     }
