@@ -129,7 +129,8 @@ Each remote gets:
   when a window closes with how many codes it caught.
 - **IR receiver**: publishes captured infrared codes on Home Assistant's
   infrared platform. It only hears codes while a capture window is open;
-  its `capturing` attribute shows when that is.
+  its `capturing` attribute shows when that is, and its other attributes
+  say how to open one (see [Use it with HAIR](#use-it-with-hair)).
 
 And these settings, which are remembered across restarts:
 
@@ -220,8 +221,20 @@ actions:
 
 [HAIR](https://github.com/DAB-LABS/HAIR) listens on Home Assistant's
 infrared platform, so it sees BroadSniff's **IR receiver** like any other.
-Add the receiver to the remotes and triggers you want it to serve in HAIR,
-then turn on **IR capture** whenever you want HAIR to hear the Broadlink.
+The receiver also follows HAIR's
+[windowed-receiver contract](https://github.com/DAB-LABS/HAIR/blob/main/docs/windowed-receivers.md),
+which tells HAIR that it captures on demand and how to open a window, so
+HAIR can turn on **IR capture** for you when you listen from it. The
+receiver's attributes:
+
+- `capturing`: true while an IR capture window is open, false otherwise.
+- `capture_switch`: the entity ID of the remote's **IR capture** switch,
+  kept current if you rename it. It is left out while that switch is
+  disabled.
+- `window_ends_at`: when the open window closes, or null.
+- `capture_mode`: `single`, `sliding` or `multiple`, the **Capture mode**
+  setting for the next window.
+
 HAIR works with IR. RF captures stay in BroadSniff for now.
 
 ## Good to know

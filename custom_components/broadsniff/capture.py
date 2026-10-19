@@ -94,7 +94,7 @@ class CaptureManager:
         """Initialize with the default settings."""
         self._device = device
         self.window: float = DEFAULT_CAPTURE_WINDOW
-        self.mode: CaptureMode = DEFAULT_CAPTURE_MODE
+        self._mode: CaptureMode = DEFAULT_CAPTURE_MODE
         self.rf_frequency: RFFrequency = DEFAULT_RF_FREQUENCY
         self.rf_custom_frequency: float = DEFAULT_RF_CUSTOM_FREQUENCY
         self._task: asyncio.Task[int] | None = None
@@ -105,6 +105,23 @@ class CaptureManager:
         self._signal_listeners: list[SignalListener] = []
         self._state_listeners: list[CALLBACK_TYPE] = []
         self._ended_listeners: list[EndedListener] = []
+
+    @property
+    def mode(self) -> CaptureMode:
+        """Return the mode the next window opens in."""
+        return self._mode
+
+    @mode.setter
+    def mode(self, mode: CaptureMode) -> None:
+        """Set the mode for the next window and tell the state listeners.
+
+        The receiver reports the mode, so a change has to reach it even
+        when no window is open.
+        """
+        if mode is self._mode:
+            return
+        self._mode = mode
+        self._notify_state()
 
     @property
     def rf_carrier(self) -> float | None:
@@ -132,7 +149,7 @@ class CaptureManager:
 
     @callback
     def async_add_state_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
-        """Call listener whenever a window opens, closes or moves its deadline."""
+        """Call listener when a window opens, closes or moves its deadline, or the mode changes."""
         return _add(self._state_listeners, listener)
 
     @callback
