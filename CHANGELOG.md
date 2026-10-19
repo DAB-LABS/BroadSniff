@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-10-19
 
 - The IR receiver follows HAIR's windowed-receiver contract, so HAIR, or
   any integration that reads the contract, can open a capture window
