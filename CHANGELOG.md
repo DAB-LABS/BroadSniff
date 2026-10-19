@@ -1,7 +1,17 @@
 # Changelog
 
-## 0.1.1 - Unreleased
+## 0.2.0 - Unreleased
 
+- The IR receiver follows HAIR's windowed-receiver contract, so HAIR, or
+  any integration that reads the contract, can open a capture window
+  itself. Two attributes join `capturing` and `window_ends_at`:
+  `capture_switch`, the entity ID of the remote's IR capture switch, and
+  `capture_mode`, the capture mode the next window opens in. The switch
+  is looked up by its unique ID each time, so renaming it is picked up at
+  once, and it is left out while the switch is disabled. A capture mode
+  change now reaches the receiver straight away.
+- Entity unique IDs, names and settings are unchanged, so a 0.1.0 install
+  upgrades in place.
 - The README opens with installation: a button that opens BroadSniff in
   HACS, the steps to add it as a custom repository or by hand, and a
   button that starts the setup.

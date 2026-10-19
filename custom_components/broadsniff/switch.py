@@ -35,6 +35,11 @@ async def async_setup_entry(
     )
 
 
+def capture_switch_unique_id(device: BroadlinkRemote, kind: CaptureKind) -> str:
+    """Return the unique ID of a remote's capture switch for a band."""
+    return f"{device.unique_id}-{kind}_capture"
+
+
 def window_ends_at(device: BroadlinkRemote) -> str | None:
     """Return the open window's deadline as an ISO string."""
     ends_at = device.capture.ends_at
@@ -52,12 +57,8 @@ class BroadSniffCaptureSwitch(BroadSniffCaptureEntity, SwitchEntity):
         """Initialize the switch."""
         super().__init__(device)
         self._kind = kind
-        if kind is CaptureKind.RF:
-            self._attr_translation_key = "rf_capture"
-            self._attr_unique_id = f"{device.unique_id}-rf_capture"
-        else:
-            self._attr_translation_key = "ir_capture"
-            self._attr_unique_id = f"{device.unique_id}-ir_capture"
+        self._attr_translation_key = f"{kind}_capture"
+        self._attr_unique_id = capture_switch_unique_id(device, kind)
 
     @property
     @override
