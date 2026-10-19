@@ -1,0 +1,124 @@
+{
+  "config": {
+    "abort": {
+      "no_remotes": "Set up a Broadlink universal remote (RM mini, RM pro, RM4 or RM5) in the Broadlink integration first.",
+      "single_instance_allowed": "BroadSniff is already set up. It covers every remote in the Broadlink integration."
+    },
+    "step": {
+      "user": {
+        "title": "Set up BroadSniff",
+        "description": "BroadSniff adds capture entities to the remotes set up in the Broadlink integration: {remotes}. Remotes added to Broadlink later get them too. You can leave some out in the options."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BroadSniff options",
+        "data": {
+          "excluded": "Remotes to leave out"
+        },
+        "data_description": {
+          "excluded": "These remotes get no capture entities."
+        }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "ir_capture": {
+        "name": "IR capture",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "signal": "Signal captured",
+              "window_ended": "Window ended"
+            }
+          }
+        }
+      },
+      "rf_capture": {
+        "name": "RF capture",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "signal": "Signal captured",
+              "window_ended": "Window ended"
+            }
+          }
+        }
+      }
+    },
+    "infrared": {
+      "infrared_receiver": {
+        "name": "IR receiver",
+        "state_attributes": {
+          "capturing": {
+            "name": "Capturing"
+          },
+          "window_ends_at": {
+            "name": "Window ends at"
+          }
+        }
+      }
+    },
+    "number": {
+      "capture_window": {
+        "name": "Capture window"
+      },
+      "rf_custom_frequency": {
+        "name": "RF custom frequency"
+      }
+    },
+    "select": {
+      "capture_mode": {
+        "name": "Capture mode",
+        "state": {
+          "single": "Stop after the first code",
+          "multiple": "Keep listening until time runs out",
+          "sliding": "Keep listening, restart timer after each code"
+        }
+      },
+      "rf_frequency": {
+        "name": "RF frequency",
+        "state": {
+          "mhz_433_92": "433.92 MHz (most remotes)",
+          "mhz_315": "315 MHz (many US garage and gate remotes)",
+          "sweep": "Sweep (hold the button while it searches)",
+          "custom": "Custom (set RF custom frequency)"
+        }
+      }
+    },
+    "sensor": {
+      "codes_captured": {
+        "name": "Codes captured"
+      }
+    },
+    "switch": {
+      "ir_capture": {
+        "name": "IR capture",
+        "state_attributes": {
+          "window_ends_at": {
+            "name": "Window ends at"
+          }
+        }
+      },
+      "rf_capture": {
+        "name": "RF capture",
+        "state_attributes": {
+          "window_ends_at": {
+            "name": "Window ends at"
+          }
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "capture_disconnected": {
+      "message": "Capture failed: {name} appears disconnected"
+    },
+    "capture_failed": {
+      "message": "Capture failed: {error}"
+    }
+  }
+}

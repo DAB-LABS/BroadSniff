@@ -14,7 +14,7 @@ from broadlink_async.exceptions import ConnectionClosedError, NetworkTimeoutErro
 from broadlink_async.remote import CapturedSignal, pulses_to_data
 import pytest
 
-from custom_components.broadsniff.capture import WINDOW_REQUEST_TIMEOUT, CaptureKind
+from custom_components.broadsniff.capture import REQUEST_TIMEOUT, CaptureKind
 from custom_components.broadsniff.const import DOMAIN
 from homeassistant.components.select import (
     ATTR_OPTION,
@@ -222,7 +222,9 @@ async def test_turn_on_against_an_unavailable_remote(
         r for r in entry.runtime_data.remotes.values() if r.mac_address == GARAGE.mac
     )
     kind = CaptureKind.IR if switch == IR_SWITCH else CaptureKind.RF
-    with pytest.raises(HomeAssistantError, match="Garage is not answering"):
+    with pytest.raises(
+        HomeAssistantError, match="Capture failed: Garage appears disconnected"
+    ):
         await remote.capture.async_start(kind)
 
     api.auth.assert_not_awaited()
@@ -415,17 +417,23 @@ async def test_going_unavailable_closes_an_open_window(
     ]
 
 
-async def test_the_window_uses_a_short_request_timeout(
+async def test_the_session_uses_a_short_request_timeout(
     hass: HomeAssistant, fake_apis: FakeApis
 ) -> None:
-    """Short while a window is open; the configured timeout otherwise."""
+    """Every request BroadSniff sends gets the short timeout (round 3).
+
+    Round 2 used it inside a window only; the owner's bench showed a
+    five-second spinner on a refused turn-on, so the probe gets it too,
+    and with it every request this session makes. Only the confirmation
+    after a silence uses the entry's own timeout.
+    """
     window, _core = await _setup(hass, fake_apis)
     api = fake_apis.apis[GARAGE.mac]
-    assert api.timeout == 10
+    assert api.timeout == REQUEST_TIMEOUT
 
     await _call(hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id=IR_SWITCH)
-    assert api.timeout == WINDOW_REQUEST_TIMEOUT
+    assert api.timeout == REQUEST_TIMEOUT
 
     window.send(None)
     await hass.async_block_till_done()
-    assert api.timeout == 10
+    assert api.timeout == REQUEST_TIMEOUT

@@ -23,6 +23,7 @@ from broadlink_async.exceptions import (
     BroadlinkException,
     ConnectionClosedError,
     EndpointClosedError,
+    NetworkTimeoutError,
 )
 from broadlink_async.remote import CapturedSignal, SignalKind
 
@@ -70,10 +71,11 @@ class RFFrequency(StrEnum):
     CUSTOM = "custom"
 
 
-# While a window is open the capture session gives each request this long,
-# so an unplugged remote shows within seconds whatever the window length.
-# A local Broadlink answers in well under a tenth of a second.
-WINDOW_REQUEST_TIMEOUT = 1.5
+# How long the capture session gives each request: the probe before a
+# window, the window's own requests and the recovery probe. A local
+# Broadlink answers in well under a tenth of a second, so a remote that
+# does not is refused, or its window ended, within seconds.
+REQUEST_TIMEOUT = 1.5
 # Consecutive unanswered requests that end a window as a failure. The
 # library forgives two missed polls and then lets the window run out its
 # own deadline without an error, so BroadSniff counts for itself.
@@ -198,14 +200,22 @@ class CaptureManager:
         if not self._device.available:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
-                translation_key="capture_failed",
-                translation_placeholders={
-                    "error": f"{self._device.name} is not answering"
-                },
+                translation_key="capture_disconnected",
+                translation_placeholders={"name": self._device.name},
             )
         try:
             await self._device.async_probe()
-        except (BroadlinkException, OSError) as err:
+        except (NetworkTimeoutError, OSError) as err:
+            # Silence. Refuse now, and let a confirmation decide whether the
+            # remote is offline; the caller does not wait for it.
+            self._device.async_report_unanswered()
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="capture_disconnected",
+                translation_placeholders={"name": self._device.name},
+            ) from err
+        except BroadlinkException as err:
+            # The remote answered, with a refusal (a locked device, say).
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="capture_failed",
@@ -233,9 +243,6 @@ class CaptureManager:
         self.codes = 0
         self._misses = 0
         self._failure = None
-        self._device.api.timeout = min(
-            self._device.configured_timeout, WINDOW_REQUEST_TIMEOUT
-        )
         self._notify_state()
         task = self._device.entry.async_create_background_task(
             self._device.hass,
@@ -300,6 +307,10 @@ class CaptureManager:
         caught = 0
         stopped = False
         failure: str | None = None
+        # True when the window failed because the remote went silent, which
+        # takes it offline; a refusal or the built-in integration's own
+        # verdict does not.
+        silent = False
         try:
             async with aclosing(signals):
                 async for signal in signals:
@@ -314,7 +325,7 @@ class CaptureManager:
                 stopped = True
             raise
         except RemoteStoppedAnswering:
-            pass
+            silent = True
         except (BroadlinkException, OSError) as err:
             # A rejected session starts the reauth flow, except when the
             # device was closed on purpose, as with any other request.
@@ -322,6 +333,7 @@ class CaptureManager:
                 err, (AuthorizationError, ConnectionClosedError)
             ) and not isinstance(err, EndpointClosedError):
                 await self._device.async_auth()
+            silent = isinstance(err, (NetworkTimeoutError, OSError))
             failure = str(err)
         finally:
             if failure is None and not stopped:
@@ -330,7 +342,7 @@ class CaptureManager:
                 # The window ran out its deadline while the remote was not
                 # answering, which the library reports as a quiet window.
                 failure = STOPPED_ANSWERING
-            self._device.api.timeout = self._device.configured_timeout
+                silent = True
             if self._task is asyncio.current_task():
                 self._task = None
             self._kind = None
@@ -342,6 +354,8 @@ class CaptureManager:
                 _LOGGER.warning(
                     "Capture window on %s failed: %s", self._device.name, failure
                 )
+            if silent:
+                self._device.async_report_unanswered()
             result = CaptureWindowResult(kind=kind, signals=caught, stopped=stopped)
             for listener in tuple(self._ended_listeners):
                 _call(listener, result)
