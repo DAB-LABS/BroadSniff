@@ -231,10 +231,10 @@ actions:
 [HAIR](https://github.com/DAB-LABS/HAIR) listens on Home Assistant's
 infrared platform, so it sees BroadSniff's **IR receiver** like any other.
 The receiver also follows HAIR's
-[windowed-receiver contract](https://github.com/DAB-LABS/HAIR),
+[windowed-receiver contract](https://github.com/DAB-LABS/HAIR/blob/main/docs/windowed-receivers.md),
 which tells HAIR that it captures on demand and how to open a window, so
-HAIR can turn on **IR capture** for you when you listen from it. The
-receiver's attributes:
+from HAIR 0.18.0 on, HAIR turns on **IR capture** for you when you listen
+from it. The receiver's attributes:
 
 - `capturing`: true while an IR capture window is open, false otherwise.
 - `capture_switch`: the entity ID of the remote's **IR capture** switch,
