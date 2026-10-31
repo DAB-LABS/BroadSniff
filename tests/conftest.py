@@ -15,7 +15,7 @@ import pytest
 
 from custom_components.broadsniff.const import BROADLINK_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
-from homeassistant.const import CONF_MAC
+from homeassistant.const import CONF_MAC, MAJOR_VERSION, MINOR_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
@@ -28,6 +28,12 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from . import FakeApis
+
+# What the stub's setup and unload return to say they succeeded. From Home
+# Assistant 2026.11 a built-in integration returns None and a boolean is an
+# error; earlier releases require a boolean. The stub stands in for a
+# built-in integration, so it answers the way each release expects.
+STUB_OK: bool | None = None if (MAJOR_VERSION, MINOR_VERSION) >= (2026, 11) else True
 
 
 @pytest.fixture(autouse=True)
@@ -63,11 +69,18 @@ class _StubFlow(ConfigFlow):
     VERSION = 1
 
 
+@pytest.fixture(autouse=True)
+def fast_sweep() -> Generator[None]:
+    """Poll a sweep every few milliseconds instead of every half second."""
+    with patch("custom_components.broadsniff.capture.DEFAULT_POLL_INTERVAL", 0.005):
+        yield
+
+
 @pytest.fixture
 async def broadlink(hass: HomeAssistant) -> AsyncGenerator[None]:
     """Replace the built-in Broadlink integration with a stub."""
 
-    async def setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    async def setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool | None:
         dr.async_get(hass).async_get_or_create(
             config_entry_id=entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, entry.data[CONF_MAC])},
@@ -75,14 +88,14 @@ async def broadlink(hass: HomeAssistant) -> AsyncGenerator[None]:
             manufacturer="Broadlink",
             name=entry.title,
         )
-        return True
+        return STUB_OK
 
     mock_integration(
         hass,
         MockModule(
             BROADLINK_DOMAIN,
             async_setup_entry=setup_entry,
-            async_unload_entry=AsyncMock(return_value=True),
+            async_unload_entry=AsyncMock(return_value=STUB_OK),
         ),
     )
     mock_platform(hass, f"{BROADLINK_DOMAIN}.config_flow")

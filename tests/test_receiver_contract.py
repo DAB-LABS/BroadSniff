@@ -11,7 +11,7 @@ from typing import Any
 from broadlink_async.remote import CapturedSignal, pulses_to_data
 import pytest
 
-from custom_components.broadsniff.const import DOMAIN
+from custom_components.broadsniff.const import DOMAIN, HAS_RF_RECEIVER
 from homeassistant.components.select import (
     ATTR_OPTION,
     DOMAIN as SELECT_DOMAIN,
@@ -269,6 +269,8 @@ async def test_unique_ids_are_unchanged(
         "rf_frequency",
         "rf_custom_frequency",
     ]
+    if HAS_RF_RECEIVER:
+        garage.append("rf_receiver")
     entrance = [
         "ir_capture",
         "ir_capture_event",

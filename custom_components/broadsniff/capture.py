@@ -24,8 +24,15 @@ from broadlink_async.exceptions import (
     ConnectionClosedError,
     EndpointClosedError,
     NetworkTimeoutError,
+    ReadError,
+    StorageError,
 )
-from broadlink_async.remote import CapturedSignal, SignalKind
+from broadlink_async.remote import (
+    DEFAULT_POLL_INTERVAL,
+    DEFAULT_REARM_INTERVAL,
+    CapturedSignal,
+    SignalKind,
+)
 
 from homeassistant.core import CALLBACK_TYPE, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -60,6 +67,15 @@ class CaptureMode(StrEnum):
 DEFAULT_CAPTURE_MODE = CaptureMode.SLIDING
 
 
+class CapturePhase(StrEnum):
+    """What an open capture window is doing."""
+
+    # Searching for the remote's carrier while the user holds a button.
+    SWEEPING = "sweeping"
+    # Armed on a carrier, waiting for a code.
+    LISTENING = "listening"
+
+
 class RFFrequency(StrEnum):
     """The carrier an RF capture window listens on."""
 
@@ -82,6 +98,10 @@ REQUEST_TIMEOUT = 1.5
 MAX_MISSED_REQUESTS = 2
 # Why a window ended when the remote went quiet under it.
 STOPPED_ANSWERING = "the remote stopped answering"
+# Why a window ended when its sweep never found a carrier.
+NO_LOCK = "no_lock"
+# How long a closing sweep waits for the device to leave sweep mode.
+CANCEL_TIMEOUT = 2.0
 
 
 class RemoteStoppedAnswering(Exception):
@@ -99,6 +119,9 @@ class CaptureWindowResult:
     kind: CaptureKind
     signals: int
     stopped: bool
+    # Set when the window ended for a reason worth naming: NO_LOCK when a
+    # sweep ran out of time before it found the carrier.
+    reason: str | None = None
 
 
 type SignalListener = Callable[[CapturedSignal, CaptureKind], None]
@@ -120,6 +143,12 @@ class CaptureManager:
         self.codes: int = 0
         self._kind: CaptureKind | None = None
         self._ends_at: datetime | None = None
+        self._phase: CapturePhase | None = None
+        # The carrier the open window listens on, in MHz: chosen, or found
+        # by the sweep. None for infrared and while sweeping.
+        self._frequency: float | None = None
+        # True when the open window's sweep ran out of time without a lock.
+        self._no_lock = False
         # Unanswered requests in a row in the open window, and why the open
         # window is being ended as a failure, if it is.
         self._misses = 0
@@ -163,6 +192,22 @@ class CaptureManager:
     def ends_at(self) -> datetime | None:
         """Return when the open window closes, if it has a deadline."""
         return self._ends_at
+
+    @property
+    def phase(self) -> CapturePhase | None:
+        """Return what the open window is doing, or None if none is open."""
+        return self._phase
+
+    @property
+    def frequency_hz(self) -> int | None:
+        """Return the carrier the open RF window listens on, in Hz.
+
+        None while no RF window is open and while a sweep is still
+        searching.
+        """
+        if self._frequency is None:
+            return None
+        return round(self._frequency * 1_000_000)
 
     @callback
     def async_add_signal_listener(self, listener: SignalListener) -> CALLBACK_TYPE:
@@ -227,10 +272,15 @@ class CaptureManager:
         sliding = mode is CaptureMode.SLIDING
         api = self._device.api
         signals: AsyncGenerator[CapturedSignal]
-        if kind is CaptureKind.RF:
+        phase = CapturePhase.LISTENING
+        frequency: float | None = None
+        if kind is CaptureKind.RF and (frequency := self.rf_carrier) is None:
+            phase = CapturePhase.SWEEPING
+            signals = self._sweep_then_capture(window, stop_after_first, sliding)
+        elif kind is CaptureKind.RF:
             signals = api.capture_rf(
                 window,
-                frequency=self.rf_carrier,
+                frequency=frequency,
                 stop_after_first=stop_after_first,
                 extend_on_signal=sliding,
             )
@@ -240,6 +290,9 @@ class CaptureManager:
             )
         self._kind = kind
         self._ends_at = _deadline(window)
+        self._phase = phase
+        self._frequency = frequency
+        self._no_lock = False
         self.codes = 0
         self._misses = 0
         self._failure = None
@@ -343,10 +396,14 @@ class CaptureManager:
                 # answering, which the library reports as a quiet window.
                 failure = STOPPED_ANSWERING
                 silent = True
+            reason = NO_LOCK if self._no_lock and failure is None else None
             if self._task is asyncio.current_task():
                 self._task = None
             self._kind = None
             self._ends_at = None
+            self._phase = None
+            self._frequency = None
+            self._no_lock = False
             self._misses = 0
             self._failure = None
             self._notify_state()
@@ -354,12 +411,97 @@ class CaptureManager:
                 _LOGGER.warning(
                     "Capture window on %s failed: %s", self._device.name, failure
                 )
+            elif reason == NO_LOCK:
+                _LOGGER.info(
+                    "RF capture on %s found no carrier: hold the remote's button "
+                    "until the frequency locks",
+                    self._device.name,
+                )
             if silent:
                 self._device.async_report_unanswered()
-            result = CaptureWindowResult(kind=kind, signals=caught, stopped=stopped)
+            result = CaptureWindowResult(
+                kind=kind, signals=caught, stopped=stopped, reason=reason
+            )
             for listener in tuple(self._ended_listeners):
                 _call(listener, result)
         return caught
+
+    async def _sweep_then_capture(
+        self, window: float, stop_after_first: bool, sliding: bool
+    ) -> AsyncGenerator[CapturedSignal]:
+        """Sweep for the remote's carrier, then capture on it.
+
+        The library sweeps inside capture_rf, out of sight. BroadSniff
+        sweeps itself so the window can say whether it is still searching
+        (hold the button) or listening (press it), and which carrier it
+        found. The sweep counts against the window. Once the carrier locks,
+        a sliding window starts its full length again; single and multiple
+        windows keep their deadline. A sweep that runs out of time ends the
+        window with NO_LOCK. A sweep that is stopped, or ends any other way
+        before the carrier locks, takes the device out of sweep mode.
+        """
+        api = self._device.api
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + window if window > 0 else None
+        handed_over = False
+        try:
+            await api.sweep_frequency()
+            swept_at = loop.time()
+            while True:
+                now = loop.time()
+                if deadline is not None and now >= deadline:
+                    self._no_lock = True
+                    return
+                delay = DEFAULT_POLL_INTERVAL
+                if deadline is not None:
+                    delay = min(delay, deadline - now)
+                await asyncio.sleep(delay)
+                if loop.time() - swept_at >= DEFAULT_REARM_INTERVAL:
+                    # The device leaves a learn mode on its own after a
+                    # while, so a long sweep is started again, as an open
+                    # window re-arms.
+                    await api.sweep_frequency()
+                    swept_at = loop.time()
+                    continue
+                try:
+                    found, frequency = await api.check_frequency()
+                except StorageError, ReadError:
+                    # A "nothing yet" answer, as check_data gives one.
+                    continue
+                except NetworkTimeoutError:
+                    # Forgiven once, as the library forgives a missed poll;
+                    # BroadSniff's watch ends the window after too many.
+                    continue
+                if found:
+                    break
+            remaining = window
+            if deadline is not None and not sliding:
+                remaining = max(deadline - loop.time(), 0.0)
+                if remaining == 0:
+                    self._no_lock = True
+                    return
+            self._phase = CapturePhase.LISTENING
+            self._frequency = frequency
+            if sliding:
+                self._ends_at = _deadline(window)
+            self._notify_state()
+            handed_over = True
+            signals = api.capture_rf(
+                remaining,
+                frequency=frequency,
+                stop_after_first=stop_after_first,
+                extend_on_signal=sliding,
+            )
+            async with aclosing(signals):
+                async for signal in signals:
+                    yield signal
+        finally:
+            if not handed_over:
+                # capture_rf cancels learning itself when it closes; before
+                # it opened, nothing has, so the sweep is cancelled here.
+                with suppress(Exception):
+                    async with asyncio.timeout(CANCEL_TIMEOUT):
+                        await api.cancel_sweep_frequency()
 
     @callback
     def _publish(

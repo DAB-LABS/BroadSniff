@@ -70,6 +70,29 @@
         "name": "RF custom frequency"
       }
     },
+    "radio_frequency": {
+      "rf_receiver": {
+        "name": "RF receiver",
+        "state_attributes": {
+          "capturing": {
+            "name": "Capturing"
+          },
+          "window_ends_at": {
+            "name": "Window ends at"
+          },
+          "capture_phase": {
+            "name": "Capture phase",
+            "state": {
+              "sweeping": "Finding the frequency (hold the button)",
+              "listening": "Listening (press the button)"
+            }
+          },
+          "frequency_hz": {
+            "name": "Frequency"
+          }
+        }
+      }
+    },
     "select": {
       "capture_mode": {
         "name": "Capture mode",

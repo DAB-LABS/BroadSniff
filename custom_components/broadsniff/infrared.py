@@ -47,9 +47,9 @@ async def async_setup_entry(
 
 
 def capture_switch_entity_id(
-    hass: HomeAssistant, device: BroadlinkRemote
+    hass: HomeAssistant, device: BroadlinkRemote, kind: CaptureKind = CaptureKind.IR
 ) -> str | None:
-    """Return the entity ID of the remote's IR capture switch, if usable.
+    """Return the entity ID of the remote's capture switch for a band, if usable.
 
     Looked up by unique ID every time, so a renamed switch is never named
     by its old ID. A disabled switch has no state and cannot be turned on,
@@ -57,7 +57,7 @@ def capture_switch_entity_id(
     """
     registry = er.async_get(hass)
     entity_id = registry.async_get_entity_id(
-        SWITCH_DOMAIN, DOMAIN, capture_switch_unique_id(device, CaptureKind.IR)
+        SWITCH_DOMAIN, DOMAIN, capture_switch_unique_id(device, kind)
     )
     if entity_id is None:
         return None
@@ -113,7 +113,7 @@ class BroadlinkInfraredReceiverEntity(BroadSniffCaptureEntity, InfraredReceiverE
             self.hass.bus.async_listen(
                 er.EVENT_ENTITY_REGISTRY_UPDATED,
                 self._on_registry_updated,
-                event_filter=_is_switch_event,
+                event_filter=is_switch_event,
             )
         )
 
@@ -151,7 +151,7 @@ class BroadlinkInfraredReceiverEntity(BroadSniffCaptureEntity, InfraredReceiverE
 
 
 @callback
-def _is_switch_event(event_data: er.EventEntityRegistryUpdatedData) -> bool:
+def is_switch_event(event_data: er.EventEntityRegistryUpdatedData) -> bool:
     """Return True for registry changes to a switch, including renames."""
     entity_ids = (event_data["entity_id"], event_data.get("old_entity_id") or "")
     return any(entity_id.startswith(f"{SWITCH_DOMAIN}.") for entity_id in entity_ids)

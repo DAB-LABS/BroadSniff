@@ -57,6 +57,8 @@ class FakeWindow:
         # goes through it like the library's check_data does, and a timed
         # out poll is forgiven the way the library forgives one.
         self.api: MagicMock | None = None
+        # What successive check_frequency calls answer: found, carrier MHz.
+        self.locks: list[tuple[bool, float]] = [(True, 433.92)]
 
     def factory(self, name: str):
         """Return a replacement for api.capture or api.capture_rf."""
@@ -117,6 +119,20 @@ class FakeApis:
         window.api = api
         api.capture = MagicMock(side_effect=window.factory("capture"))
         api.capture_rf = MagicMock(side_effect=window.factory("capture_rf"))
+        # The sweep. check_frequency goes through send_packet like the real
+        # request, so BroadSniff's watch sees it answered or not; it answers
+        # with whatever is at the front of window.locks, and keeps
+        # answering with the last entry.
+        api.sweep_frequency = AsyncMock()
+        api.cancel_sweep_frequency = AsyncMock()
+
+        async def check_frequency() -> tuple[bool, float]:
+            await api.send_packet(0x6A, b"")
+            if len(window.locks) > 1:
+                return window.locks.pop(0)
+            return window.locks[0]
+
+        api.check_frequency = AsyncMock(side_effect=check_frequency)
         self.apis[mac.hex()] = api
         self.windows[mac.hex()] = window
         return api
@@ -182,6 +198,14 @@ def add_core_entities(
         if state is not None:
             hass.states.async_set(registry_entry.entity_id, state)
     return entity_ids
+
+
+async def wait_for(hass: HomeAssistant, condition, timeout: float = 2.0) -> None:
+    """Let the event loop run until condition() is true; fail after timeout."""
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0.005)
+    await hass.async_block_till_done()
 
 
 def set_core_state(hass: HomeAssistant, entity_ids: list[str], state: str) -> None:

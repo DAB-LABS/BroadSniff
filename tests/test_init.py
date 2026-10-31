@@ -1,7 +1,10 @@
 """Tests for how BroadSniff attaches to the Broadlink integration."""
 
+import sys
+from unittest.mock import patch
+
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import STATE_UNAVAILABLE, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     area_registry as ar,
@@ -9,10 +12,13 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 
+from custom_components.broadsniff import const
 from custom_components.broadsniff.const import (
     BROADLINK_DOMAIN,
     CONF_EXCLUDED,
     DOMAIN,
+    HAS_RF_RECEIVER,
+    PLATFORMS,
 )
 
 from . import BEDROOM, ENTRANCE, GARAGE, FakeApis, add_remote, setup_capture
@@ -29,6 +35,8 @@ GARAGE_ENTITIES = {
     "event.garage_rf_capture",
     "infrared.garage_ir_receiver",
 }
+if HAS_RF_RECEIVER:
+    GARAGE_ENTITIES.add("radio_frequency.garage_rf_receiver")
 ENTRANCE_ENTITIES = {
     "switch.entrance_ir_capture",
     "select.entrance_capture_mode",
@@ -219,3 +227,19 @@ async def test_removed_remote_loses_its_device(
     assert not _devices(hass, GARAGE.mac)
     assert hass.states.get("switch.garage_ir_capture") is None
     assert hass.states.get("switch.entrance_ir_capture") is not None
+
+
+def test_rf_platform_only_with_rf_receivers() -> None:
+    """The RF platform is set up only where Home Assistant has RF receivers."""
+    try:
+        from homeassistant.components.radio_frequency import (  # noqa: F401
+            RadioFrequencyReceiverEntity,
+        )
+    except ImportError:
+        available = False
+    else:
+        available = True
+    assert HAS_RF_RECEIVER is available
+    assert (Platform.RADIO_FREQUENCY in PLATFORMS) is available
+    with patch.dict(sys.modules, {"homeassistant.components.radio_frequency": None}):
+        assert const._has_rf_receiver() is False
