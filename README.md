@@ -8,19 +8,19 @@ BroadSniff lets Home Assistant hear what your Broadlink universal remote
 hears. Turn on capture, point any IR or RF remote at your Broadlink RM,
 press buttons, and BroadSniff hands you each code: ready to send back, to
 trigger automations, or to pass to [HAIR](https://github.com/DAB-LABS/HAIR)
-and anything else that listens on Home Assistant's infrared platform.
+and anything else that listens on Home Assistant's infrared or radio
+frequency platform.
 
 It is a small custom integration that works alongside Home Assistant's
 built-in Broadlink integration. Your remotes stay set up there; BroadSniff
 only adds capture.
 
 > [!NOTE]
-> BroadSniff captures RF codes too, but Home Assistant has no RF receiver
-> yet: its radio frequency platform can only send. So RF codes stay with
-> your Broadlink. You can read them, trigger automations from them while a
+> RF codes reach other integrations through BroadSniff's RF receiver, which
+> needs Home Assistant 2026.11 or newer. On 2026.10, RF codes stay with
+> your Broadlink: you can read them, trigger automations from them while a
 > capture window is open, and send them back through an RM pro or RM4 pro
-> with `remote.send_command`. They do not reach HAIR or other integrations
-> the way IR codes do. That needs an RF receiver in Home Assistant first.
+> with `remote.send_command`.
 
 ## Install
 
@@ -66,6 +66,7 @@ pick it.
 - At least one Broadlink universal remote set up in the built-in Broadlink
   integration: RM mini, RM pro, RM4 mini, RM4 pro, RM5 plus and similar.
   RF capture needs an RM pro or RM4 pro.
+- The RF receiver needs Home Assistant 2026.11 or newer.
 
 ## Why BroadSniff exists
 
@@ -98,9 +99,9 @@ demand rather than listening all the time, with the capture action built
 into the receiver itself. If that lands, capture can move into the
 built-in Broadlink integration, and BroadSniff will be retired.
 
-RF needs one more step. Home Assistant's radio frequency platform sends
-codes but cannot receive them yet. Once it has a receiver, BroadSniff's RF
-captures can be published there the same way IR captures are today.
+The same applies to RF. Home Assistant's radio frequency platform has
+receivers from 2026.11, and BroadSniff publishes its RF captures there the
+way it publishes IR captures on the infrared platform.
 
 Retiring it will be easy. BroadSniff never changes your Broadlink setup,
 so removing it leaves your remotes and the built-in integration exactly as
@@ -124,8 +125,7 @@ Each remote gets:
 - **IR capture**: a switch. Turn it on and the remote listens for infrared
   codes. Its icon changes while it listens. It turns off by itself when the
   window closes, and turning it off stops the remote listening.
-- **RF capture** (RM pro and RM4 pro): the same for radio frequency, with
-  the limits in the note at the top.
+- **RF capture** (RM pro and RM4 pro): the same for radio frequency.
 - **Codes captured**: counts the codes the open window has caught, so you
   can watch it go up as you press buttons. It goes back to zero when a new
   window opens and keeps the total once the window closes.
@@ -140,6 +140,11 @@ Each remote gets:
   request goes unanswered it asks again a few seconds later, and if that
   goes unanswered too it takes the remote offline and checks back every
   15 seconds.
+- **RF receiver** (RM pro and RM4 pro, Home Assistant 2026.11 and newer):
+  publishes captured RF codes on Home Assistant's radio frequency platform,
+  each with the carrier it was heard on. Like the IR receiver, it only
+  hears codes while an **RF capture** window is open, and it has the same
+  attributes, for RF windows (see [The RF receiver](#the-rf-receiver)).
 
 And these settings, which are remembered across restarts:
 
@@ -194,6 +199,17 @@ remotes use 433.92 MHz, the default. If nothing arrives, try 315 MHz, or
 **Sweep** if you do not know the frequency. The **RF capture** event holds
 the code and the carrier it was heard on, in `frequency_mhz`.
 
+Leave a few seconds between presses. After each code the remote has to
+start listening again, and a press that comes too soon after the last one
+can be missed.
+
+With **Sweep**, hold the button down while the remote searches. The RF
+receiver's `capture_phase` reads `sweeping` until the carrier locks, then
+`listening`: release the button and press it once more. If the carrier
+does not lock before the window runs out, the window closes and the **RF
+capture** event's `window_ended` says `reason: no_lock`. Turning **RF
+capture** off stops a sweep.
+
 ### Send a code back
 
 Codes come in the `b64:...` form that the built-in integration's
@@ -244,7 +260,21 @@ from it. The receiver's attributes:
 - `capture_mode`: `single`, `sliding` or `multiple`, the **Capture mode**
   setting for the next window.
 
-HAIR works with IR. RF captures stay in BroadSniff for now.
+### The RF receiver
+
+On an RM pro or RM4 pro with Home Assistant 2026.11 or newer, the **RF
+receiver** publishes RF captures on Home Assistant's radio frequency
+platform, with the carrier each one was heard on. It has the same
+attributes as the IR receiver, for **RF capture** windows, and names the
+**RF capture** switch, plus two that say how an RF window is getting on:
+
+- `capture_phase`: `sweeping` while the remote searches for the carrier,
+  `listening` once it is listening for a code, null with no RF window open.
+- `frequency_hz`: the carrier the open RF window listens on, in Hz, once it
+  is known.
+
+It declares the two bands the built-in Broadlink integration sends on,
+433.05 to 434.79 MHz and 314.95 to 315.25 MHz.
 
 ## Good to know
 

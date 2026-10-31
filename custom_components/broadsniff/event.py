@@ -20,6 +20,7 @@ PARALLEL_UPDATES = 0
 
 ATTR_CODE = "code"
 ATTR_FREQUENCY_MHZ = "frequency_mhz"
+ATTR_REASON = "reason"
 ATTR_SIGNALS = "signals"
 ATTR_STOPPED = "stopped"
 
@@ -86,8 +87,11 @@ class BroadSniffCaptureEvent(BroadSniffEntity, EventEntity):
         """Fire when a window on this entity's band closes."""
         if result.kind is not self._kind:
             return
-        self._trigger_event(
-            EVENT_WINDOW_ENDED,
-            {ATTR_SIGNALS: result.signals, ATTR_STOPPED: result.stopped},
-        )
+        data: dict[str, Any] = {
+            ATTR_SIGNALS: result.signals,
+            ATTR_STOPPED: result.stopped,
+        }
+        if result.reason is not None:
+            data[ATTR_REASON] = result.reason
+        self._trigger_event(EVENT_WINDOW_ENDED, data)
         self.async_write_ha_state()

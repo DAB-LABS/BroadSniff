@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 - unreleased
+
+- An RF receiver on Home Assistant's radio frequency platform, for the RM
+  pro and RM4 pro, from Home Assistant 2026.11. It publishes every code an
+  RF capture window catches, with the carrier it was heard on: the one an
+  RM4 pro records in its capture, otherwise the one the window listened
+  on. Every duration in the capture is kept, including the time after the
+  last pulse. It declares the two bands the built-in Broadlink integration
+  sends on. On Home Assistant 2026.10 BroadSniff loads without it.
+- The RF receiver follows the windowed-receiver contract like the IR
+  receiver, for RF windows: `capturing`, `capture_switch` (the RF capture
+  switch), `window_ends_at` and `capture_mode`. Two more attributes say how
+  an RF window is getting on: `capture_phase`, `sweeping` or `listening`,
+  and `frequency_hz`, the carrier it listens on.
+- A sweep is now visible and can be stopped. While the remote searches for
+  the carrier the window reads `sweeping`; once the carrier locks it reads
+  `listening` and names the carrier. A sliding window starts its full
+  length again at the lock. A sweep that does not lock before the window
+  runs out closes the window with `reason: no_lock` on the RF capture
+  event, and turning RF capture off during a sweep takes the remote out of
+  it.
+
 ## 0.2.1 - 2026-10-19
 
 - BroadSniff has its own icon and logo, shown in Home Assistant and HACS.

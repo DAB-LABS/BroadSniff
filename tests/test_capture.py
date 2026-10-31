@@ -33,7 +33,15 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-from . import ENTRANCE, GARAGE, FakeApis, FakeWindow, add_remote, setup_capture
+from . import (
+    ENTRANCE,
+    GARAGE,
+    FakeApis,
+    FakeWindow,
+    add_remote,
+    setup_capture,
+    wait_for,
+)
 
 from pytest_homeassistant_custom_component.common import (
     mock_restore_cache,
@@ -254,13 +262,16 @@ async def test_settings_are_restored(hass: HomeAssistant, fake_apis: FakeApis) -
     [
         pytest.param("mhz_433_92", 433.92, id="433"),
         pytest.param("mhz_315", 315.0, id="315"),
-        pytest.param("sweep", None, id="sweep"),
+        pytest.param("sweep", 433.92, id="sweep"),
     ],
 )
 async def test_rf_capture(
     hass: HomeAssistant, fake_apis: FakeApis, option: str, expected: float | None
 ) -> None:
-    """RF capture listens on the chosen carrier and is not infrared."""
+    """RF capture listens on the chosen carrier, or the one the sweep found.
+
+    It is not infrared.
+    """
     window = await _setup(hass, fake_apis)
     await _set_mode(hass, "single")
     await _call(
@@ -275,11 +286,19 @@ async def test_rf_capture(
     )
     assert hass.states.get("switch.garage_rf_capture").state == STATE_ON
     assert hass.states.get("switch.garage_ir_capture").state == STATE_OFF
-    assert window.calls[-1] == (
-        "capture_rf",
-        (10.0,),
-        {"frequency": expected, "stop_after_first": True, "extend_on_signal": False},
-    )
+    await wait_for(hass, lambda: window.calls)
+    name, (seconds,), kwargs = window.calls[-1]
+    assert name == "capture_rf"
+    assert kwargs == {
+        "frequency": expected,
+        "stop_after_first": True,
+        "extend_on_signal": False,
+    }
+    if option == "sweep":
+        # A single window keeps its deadline: the sweep used some of it.
+        assert 0 < seconds < 10.0
+    else:
+        assert seconds == 10.0
 
     received: list[InfraredReceivedSignal] = []
     async_subscribe_receiver(hass, "infrared.garage_ir_receiver", received.append)
