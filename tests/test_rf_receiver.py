@@ -370,8 +370,10 @@ async def test_keyfob_capture(hass: HomeAssistant, fake_apis: FakeApis) -> None:
     """A real RM4 pro capture of a keyfob button reaches subscribers whole.
 
     The packet holds the end of one frame, nine whole frames and a frame
-    cut short, and ends on the device's fixed 1500-tick tail. Every whole
-    frame reads as the same 24-bit code.
+    cut short, and ends on 1500 ticks: where the read of the remote's
+    buffer stopped, published as reported. Every whole frame reads as the
+    same 24-bit code by its marks; the space at index 249 is stretched by
+    the buffer seam, which a 5 ms split does not cut.
     """
     window = await _setup(hass, fake_apis)
     received = _subscribe(hass)
