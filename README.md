@@ -140,11 +140,13 @@ Each remote gets:
   request goes unanswered it asks again a few seconds later, and if that
   goes unanswered too it takes the remote offline and checks back every
   15 seconds.
-- **RF receiver** (RM pro and RM4 pro, Home Assistant 2026.11 and newer):
-  publishes captured RF codes on Home Assistant's radio frequency platform,
-  each with the carrier it was heard on. Like the IR receiver, it only
-  hears codes while an **RF capture** window is open, and it has the same
-  attributes, for RF windows (see [The RF receiver](#the-rf-receiver)).
+- **RF receiver** (RM pro and RM4 pro): publishes captured RF codes on
+  Home Assistant's radio frequency platform, each with the carrier it was
+  heard on. It needs Home Assistant 2026.11 or newer, the first version
+  with that platform; on older versions BroadSniff runs without it and
+  everything else works. Like the IR receiver, it only hears codes while
+  an **RF capture** window is open, and it has the same attributes, for RF
+  windows (see [The RF receiver](#the-rf-receiver)).
 
 And these settings, which are remembered across restarts:
 
@@ -162,7 +164,8 @@ And these settings, which are remembered across restarts:
   - **315 MHz**: many US garage and gate remotes.
   - **Sweep**: the remote searches for the carrier. Hold the button for a
     few seconds, release it, then press it once more. Slower, and less
-    reliable on some firmware.
+    reliable on some firmware. It needs a remote that keeps transmitting
+    while the button is held (see [Capture an RF code](#capture-an-rf-code)).
   - **Custom**: uses **RF custom frequency**, 300 to 450 MHz. That entity
     is disabled until you need it; enable it on the device page.
 
@@ -209,6 +212,11 @@ receiver's `capture_phase` reads `sweeping` until the carrier locks, then
 does not lock before the window runs out, the window closes and the **RF
 capture** event's `window_ended` says `reason: no_lock`. Turning **RF
 capture** off stops a sweep.
+
+Sweep only works with a remote that keeps transmitting while its button
+is held. Many keyfobs send one short burst and stop, even with the button
+still down, so the remote never finds the carrier. For those, pick the
+band in **RF frequency** instead and keep Sweep as the fallback.
 
 ### Send a code back
 
@@ -275,6 +283,23 @@ attributes as the IR receiver, for **RF capture** windows, and names the
 
 It declares the two bands the built-in Broadlink integration sends on,
 433.05 to 434.79 MHz and 314.95 to 315.25 MHz.
+
+**Reading an RM4 pro capture.** BroadSniff publishes every duration the
+remote reports, as it reports them. An RF capture from an RM4 pro is a
+read of the remote's buffer, cut at 500 durations (1,000 for a long
+press), and the buffer has a seam every 250 durations:
+
+- The last value is where the read stopped, not part of the code. On the
+  bench it is always 45,680 us, whatever was pressed.
+- The duration at every 250th position (250, 500, 750, counting from 1)
+  can be stretched. On a keyfob the space at position 250 came back about
+  4.5 ms long instead of about 1.25 ms, and the frame around it can decode
+  as a different code.
+
+Anything that decodes these captures should drop the last value and not
+trust the duration at every 250th position. A capture holds several
+repeats of the code, so the clean frames between the seams are enough to
+read it.
 
 ## Good to know
 

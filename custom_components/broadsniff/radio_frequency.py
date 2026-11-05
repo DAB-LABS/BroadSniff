@@ -59,9 +59,12 @@ def broadlink_rf_pulses_to_timings(pulses: tuple[int, ...]) -> list[int]:
 
     The device reports unsigned durations, carrier on first and
     alternating. Carrier on is positive and carrier off negative. Every
-    duration is kept, including a final carrier-off time: an RF capture
-    holds several repeats of a code, and the times between them are part
-    of what was heard.
+    duration is kept: an RF capture holds several repeats of a code, and
+    the times between them are part of what was heard. On an RM4 pro the
+    last value is where the read of the remote's buffer stopped, not a
+    gap, and the duration at every 250th position can be stretched by a
+    seam in that buffer; both are passed on as reported, for the reader
+    to discard.
     """
     return [pulse if index % 2 == 0 else -pulse for index, pulse in enumerate(pulses)]
 

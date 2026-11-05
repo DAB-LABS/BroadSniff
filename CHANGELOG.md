@@ -6,9 +6,12 @@
   pro and RM4 pro, from Home Assistant 2026.11. It publishes every code an
   RF capture window catches, with the carrier it was heard on: the one an
   RM4 pro records in its capture, otherwise the one the window listened
-  on. Every duration in the capture is kept, including the time after the
-  last pulse. It declares the two bands the built-in Broadlink integration
-  sends on. On Home Assistant 2026.10 BroadSniff loads without it.
+  on. Every duration the remote reports is kept. On an RM4 pro the last
+  value of a capture is where the read of the remote's buffer stopped,
+  and the duration at every 250th position can be stretched by a seam in
+  that buffer; the README explains how to read around both. It declares
+  the two bands the built-in Broadlink integration sends on. On Home
+  Assistant 2026.10 BroadSniff loads without it.
 - The RF receiver follows the windowed-receiver contract like the IR
   receiver, for RF windows: `capturing`, `capture_switch` (the RF capture
   switch), `window_ends_at` and `capture_mode`. Two more attributes say how
@@ -20,7 +23,8 @@
   length again at the lock. A sweep that does not lock before the window
   runs out closes the window with `reason: no_lock` on the RF capture
   event, and turning RF capture off during a sweep takes the remote out of
-  it.
+  it. Sweep needs a remote that keeps transmitting while the button is
+  held; for a keyfob that sends one short burst, pick the band instead.
 
 ## 0.2.1 - 2026-10-19
 
