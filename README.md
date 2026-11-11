@@ -28,18 +28,11 @@ only adds capture.
 
 [![Open your Home Assistant instance and open the BroadSniff repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DAB-LABS&repository=broadsniff&category=integration)
 
-Click the button above. If HACS asks, confirm adding the repository. Then
-click **Download** and restart Home Assistant.
+Click the button above, then click **Download** and restart Home
+Assistant.
 
-Or add it by hand:
-
-1. Open **HACS** in your Home Assistant sidebar.
-2. Open the menu (three dots, top right) and choose **Custom
-   repositories**.
-3. Add `https://github.com/DAB-LABS/broadsniff` with the type
-   **Integration**.
-4. Find **BroadSniff** in HACS, click **Download**, and restart Home
-   Assistant.
+Or open **HACS** in your Home Assistant sidebar, search for **BroadSniff**,
+click **Download**, and restart Home Assistant.
 
 ### Manual
 
