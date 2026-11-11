@@ -25,6 +25,8 @@
   event, and turning RF capture off during a sweep takes the remote out of
   it. Sweep needs a remote that keeps transmitting while the button is
   held; for a keyfob that sends one short burst, pick the band instead.
+- BroadSniff is in the HACS default list, so it installs without adding
+  a custom repository. The README's install steps say so.
 
 ## 0.2.1 - 2026-10-19
 
