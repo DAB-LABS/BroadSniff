@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 - unreleased
+## 0.3.0 - 2026-11-10
 
 - An RF receiver on Home Assistant's radio frequency platform, for the RM
   pro and RM4 pro, from Home Assistant 2026.11. It publishes every code an
