@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 - Unreleased
+## 0.3.1 - 2026-11-20
 
 - Both receivers name the entities that set the next window, as HAIR's
   windowed-receiver contract describes, so HAIR can offer them as pickers
