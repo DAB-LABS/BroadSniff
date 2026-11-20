@@ -45,7 +45,10 @@ class BroadSniffCaptureEvent(BroadSniffEntity, EventEntity):
     """Fires for every captured code and when a window closes.
 
     The code is in the form remote.send_command accepts (b64:...), so a
-    capture can be sent straight back or stored.
+    capture can be sent straight back or stored. The window_ended event
+    repeats the window's last code (and its carrier, for RF), because it
+    replaces the signal event's attributes on this entity, and without it
+    the code would no longer be shown once the window closes.
     """
 
     _attr_event_types = [EVENT_SIGNAL, EVENT_WINDOW_ENDED]
@@ -60,6 +63,9 @@ class BroadSniffCaptureEvent(BroadSniffEntity, EventEntity):
         else:
             self._attr_translation_key = "ir_capture"
             self._attr_unique_id = f"{device.unique_id}-ir_capture_event"
+        # The last code the open window caught on this band, for the
+        # window_ended event. Cleared when the window closes.
+        self._last: dict[str, Any] | None = None
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -79,6 +85,7 @@ class BroadSniffCaptureEvent(BroadSniffEntity, EventEntity):
         }
         if self._kind is CaptureKind.RF:
             data[ATTR_FREQUENCY_MHZ] = signal.frequency_mhz
+        self._last = data
         self._trigger_event(EVENT_SIGNAL, data)
         self.async_write_ha_state()
 
@@ -93,5 +100,8 @@ class BroadSniffCaptureEvent(BroadSniffEntity, EventEntity):
         }
         if result.reason is not None:
             data[ATTR_REASON] = result.reason
+        last, self._last = self._last, None
+        if result.signals and last is not None:
+            data |= last
         self._trigger_event(EVENT_WINDOW_ENDED, data)
         self.async_write_ha_state()

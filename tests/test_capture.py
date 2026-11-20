@@ -130,6 +130,8 @@ async def test_capture_switch_runs_a_window(
     ]
     assert len(signal_events) == 1
     assert signal_events[0].attributes["code"] == "b64:" + b64encode(IR_PACKET).decode()
+    # The window's code stays on the entity after the window closes.
+    assert event.attributes["code"] == "b64:" + b64encode(IR_PACKET).decode()
     assert window.closed == 1
 
 
@@ -151,6 +153,7 @@ async def test_capture_switch_off_stops_the_window(
     assert event.attributes["event_type"] == "window_ended"
     assert event.attributes["signals"] == 0
     assert event.attributes["stopped"] is True
+    assert "code" not in event.attributes
 
 
 async def test_settings_reach_the_window(
@@ -335,6 +338,59 @@ async def test_rf_event_carries_code_and_carrier(
 
     assert fired[0]["code"] == "b64:" + b64encode(RF_PACKET).decode()
     assert fired[0]["frequency_mhz"] == 433.92
+
+
+async def test_window_ended_keeps_the_last_code(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """A window that caught several codes ends with the last one shown."""
+    window = await _setup(hass, fake_apis)
+    await _set_mode(hass, "multiple")
+    first = CapturedSignal.from_packet(pulses_to_data([9000, 4500, 560, 40000]))
+    await _call(
+        hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id="switch.garage_ir_capture"
+    )
+    window.send(first)
+    window.send(_ir())
+    await hass.async_block_till_done()
+    await _call(
+        hass, SWITCH_DOMAIN, SERVICE_TURN_OFF, entity_id="switch.garage_ir_capture"
+    )
+
+    event = hass.states.get("event.garage_ir_capture")
+    assert event.attributes["event_type"] == "window_ended"
+    assert event.attributes["signals"] == 2
+    assert event.attributes["code"] == "b64:" + b64encode(IR_PACKET).decode()
+
+    # The next window starts with no code of its own.
+    await _call(
+        hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id="switch.garage_ir_capture"
+    )
+    await _call(
+        hass, SWITCH_DOMAIN, SERVICE_TURN_OFF, entity_id="switch.garage_ir_capture"
+    )
+    event = hass.states.get("event.garage_ir_capture")
+    assert event.attributes["signals"] == 0
+    assert "code" not in event.attributes
+
+
+async def test_rf_window_ended_keeps_code_and_carrier(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """An RF window ends with its code and the carrier it was heard on."""
+    window = await _setup(hass, fake_apis)
+    await _set_mode(hass, "single")
+    await _call(
+        hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id="switch.garage_rf_capture"
+    )
+    await wait_for(hass, lambda: window.calls)
+    window.send(_rf())
+    await hass.async_block_till_done()
+
+    event = hass.states.get("event.garage_rf_capture")
+    assert event.attributes["event_type"] == "window_ended"
+    assert event.attributes["code"] == "b64:" + b64encode(RF_PACKET).decode()
+    assert event.attributes["frequency_mhz"] == 433.92
 
 
 async def test_receiver_publishes_ir_timings(
