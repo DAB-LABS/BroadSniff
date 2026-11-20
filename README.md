@@ -174,11 +174,18 @@ remote unavailable, so are its capture entities.
 3. Point the remote you want to capture at the Broadlink and press a
    button.
 4. Watch **Codes captured** go to 1. The **IR capture** event now holds the
-   code, in its `code` attribute.
+   code, in its `code` attribute. It still holds it after the window
+   closes: the `window_ended` event repeats the window's last code.
 
 To read the code, open the **IR capture** event, choose the
 three-dot menu, and look at **Attributes**, or find it in
 **Developer tools > States**.
+
+BroadSniff passes codes on and does not store them. The event shows the
+last code until the next window catches a code or closes; to keep codes,
+save them from the event (see
+[Use a capture in an automation](#use-a-capture-in-an-automation)) or let
+HAIR learn them.
 
 ### Capture a whole remote
 
@@ -186,14 +193,16 @@ Leave **Capture mode** on **Keep listening, restart timer after each
 code**, turn on **IR capture**, and press the buttons one after another.
 Each press adds one to **Codes captured** and restarts the countdown. When
 you stop pressing, the window closes 10 seconds later. Every code is in
-the history of the **IR capture** event.
+the history of the **IR capture** event, and the last one stays on it
+after the window closes.
 
 ### Capture an RF code
 
 Turn on **RF capture** and press the button on your RF remote. Most
 remotes use 433.92 MHz, the default. If nothing arrives, try 315 MHz, or
 **Sweep** if you do not know the frequency. The **RF capture** event holds
-the code and the carrier it was heard on, in `frequency_mhz`.
+the code and the carrier it was heard on, in `frequency_mhz`, also after
+the window closes.
 
 Leave a few seconds between presses. After each code the remote has to
 start listening again, and a press that comes too soon after the last one
@@ -228,7 +237,9 @@ data:
 
 The event entities change state every time they fire, and `event_type`
 says what happened: `signal` for a code, `window_ended` when a window
-closes.
+closes. A `window_ended` that caught codes carries the last one in `code`
+(and `frequency_mhz` for RF), so trigger on `signal` to get every code
+once.
 
 ```yaml
 triggers:

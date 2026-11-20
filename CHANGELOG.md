@@ -11,6 +11,12 @@
   sweep, and the **RF custom frequency** carrier while that number is
   enabled. Each name follows a rename and is left out while its entity is
   disabled.
+- The capture event keeps showing the code after its window closes. The
+  `window_ended` event replaced the code on the event entity, so a code
+  captured without HAIR seemed to vanish (#7). `window_ended` now repeats
+  the window's last code, and `frequency_mhz` for RF; a window that caught
+  nothing still has no code. The README says that BroadSniff passes codes
+  on and does not store them, and how to keep them.
 
 ## 0.3.0 - 2026-11-10
 
