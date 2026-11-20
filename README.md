@@ -260,6 +260,13 @@ from it. The receiver's attributes:
 - `window_ends_at`: when the open window closes, or null.
 - `capture_mode`: `single`, `sliding` or `multiple`, the **Capture mode**
   setting for the next window.
+- `window_length`: the entity ID of the **Capture window** number, so
+  HAIR can offer the window's length on the receiver's pill.
+- `capture_mode_select`: the entity ID of the **Capture mode** select, so
+  HAIR can offer the window's type.
+
+Each entity ID is kept current if you rename the entity, and left out
+while it is disabled.
 
 ### The RF receiver
 
@@ -273,6 +280,16 @@ attributes as the IR receiver, for **RF capture** windows, and names the
   `listening` once it is listening for a code, null with no RF window open.
 - `frequency_hz`: the carrier the open RF window listens on, in Hz, once it
   is known.
+
+It also names the **RF frequency** select, so HAIR can offer the carrier
+on the receiver's pill:
+
+- `frequency_select`: the entity ID of the **RF frequency** select.
+- `frequency_options`: what each of its options means, a carrier in Hz or
+  `sweep`. **Custom** is the carrier on the **RF custom frequency** number,
+  and is only offered while that number is enabled. It is disabled by
+  default; enable it in the entity settings to listen on a carrier that
+  is not a preset, such as 433.42 MHz for Somfy.
 
 It declares the two bands the built-in Broadlink integration sends on,
 433.05 to 434.79 MHz and 314.95 to 315.25 MHz.

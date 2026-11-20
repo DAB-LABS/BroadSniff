@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 - Unreleased
+
+- Both receivers name the entities that set the next window, as HAIR's
+  windowed-receiver contract describes, so HAIR can offer them as pickers
+  on the receiver's pill: `window_length` (the **Capture window** number)
+  and `capture_mode_select` (the **Capture mode** select). The RF receiver
+  also names the **RF frequency** select as `frequency_select`, with
+  `frequency_options` saying what each option means: 433.92 MHz, 315 MHz,
+  sweep, and the **RF custom frequency** carrier while that number is
+  enabled. Each name follows a rename and is left out while its entity is
+  disabled.
+
 ## 0.3.0 - 2026-11-10
 
 - An RF receiver on Home Assistant's radio frequency platform, for the RM

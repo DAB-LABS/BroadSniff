@@ -4,6 +4,8 @@ The receiver tells other integrations, HAIR among them, that it captures
 on demand: capturing says whether a window is open, capture_switch names
 the switch that opens one, window_ends_at says when the open window
 closes, and capture_mode is the mode the next window opens in.
+window_length and capture_mode_select name the entities that set the next
+window, so HAIR can offer them as pickers.
 """
 
 from typing import Any
@@ -29,6 +31,7 @@ from pytest_homeassistant_custom_component.common import mock_restore_cache
 RECEIVER = "infrared.garage_ir_receiver"
 SWITCH = "switch.garage_ir_capture"
 MODE = "select.garage_capture_mode"
+WINDOW = "number.garage_capture_window"
 
 IR_PACKET = pulses_to_data([9000, 4500, 560, 560, 560, 1690, 560, 40000])
 
@@ -80,6 +83,77 @@ async def test_attributes_from_startup(
     entrance = _attributes(hass, "infrared.entrance_ir_receiver")
     assert entrance["capturing"] is False
     assert entrance["capture_switch"] == "switch.entrance_ir_capture"
+
+
+async def test_window_settings_are_declared(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """The receiver names the entities that set the next window."""
+    await _setup(hass, fake_apis)
+
+    attributes = _attributes(hass)
+    assert attributes["window_length"] == WINDOW
+    assert attributes["capture_mode_select"] == MODE
+    assert "frequency_select" not in attributes
+    assert "frequency_options" not in attributes
+
+    entrance = _attributes(hass, "infrared.entrance_ir_receiver")
+    assert entrance["window_length"] == "number.entrance_capture_window"
+    assert entrance["capture_mode_select"] == "select.entrance_capture_mode"
+
+
+async def test_renamed_setting(hass: HomeAssistant, fake_apis: FakeApis) -> None:
+    """Renaming a setting reaches the receiver without a window."""
+    await _setup(hass, fake_apis)
+    registry = er.async_get(hass)
+
+    registry.async_update_entity(MODE, new_entity_id="select.garage_learn_mode")
+    registry.async_update_entity(WINDOW, new_entity_id="number.garage_learn_time")
+    await hass.async_block_till_done()
+
+    attributes = _attributes(hass)
+    assert attributes["capture_mode_select"] == "select.garage_learn_mode"
+    assert attributes["window_length"] == "number.garage_learn_time"
+
+
+async def test_disabled_setting_is_left_out(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """A disabled setting has no state to set, so it is not named."""
+    await _setup(hass, fake_apis)
+    registry = er.async_get(hass)
+
+    registry.async_update_entity(WINDOW, disabled_by=er.RegistryEntryDisabler.USER)
+    await hass.async_block_till_done()
+
+    attributes = _attributes(hass)
+    assert "window_length" not in attributes
+    assert attributes["capture_mode_select"] == MODE
+    assert attributes["capture_switch"] == SWITCH
+
+    registry.async_update_entity(WINDOW, disabled_by=None)
+    await hass.async_block_till_done()
+
+    assert _attributes(hass)["window_length"] == WINDOW
+
+
+async def test_other_settings_leave_the_receiver_alone(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """Renaming another remote's setting does not write this receiver."""
+    await _setup(hass, fake_apis)
+    before = hass.states.get(RECEIVER)
+
+    er.async_get(hass).async_update_entity(
+        "select.entrance_capture_mode", new_entity_id="select.entrance_learn_mode"
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(RECEIVER).last_updated == before.last_updated
+    assert (
+        _attributes(hass, "infrared.entrance_ir_receiver")["capture_mode_select"]
+        == "select.entrance_learn_mode"
+    )
 
 
 @pytest.mark.parametrize("mode", ["single", "multiple", "sliding"])

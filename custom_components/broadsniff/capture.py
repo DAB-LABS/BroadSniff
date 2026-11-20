@@ -137,7 +137,7 @@ class CaptureManager:
         self.window: float = DEFAULT_CAPTURE_WINDOW
         self._mode: CaptureMode = DEFAULT_CAPTURE_MODE
         self.rf_frequency: RFFrequency = DEFAULT_RF_FREQUENCY
-        self.rf_custom_frequency: float = DEFAULT_RF_CUSTOM_FREQUENCY
+        self._rf_custom_frequency: float = DEFAULT_RF_CUSTOM_FREQUENCY
         self._task: asyncio.Task[int] | None = None
         # Codes caught by the open window, or by the last one once it closes.
         self.codes: int = 0
@@ -172,6 +172,23 @@ class CaptureManager:
         if mode is self._mode:
             return
         self._mode = mode
+        self._notify_state()
+
+    @property
+    def rf_custom_frequency(self) -> float:
+        """Return the carrier, in MHz, a custom RF window listens on."""
+        return self._rf_custom_frequency
+
+    @rf_custom_frequency.setter
+    def rf_custom_frequency(self, frequency: float) -> None:
+        """Set the custom carrier and tell the state listeners.
+
+        The RF receiver reports the custom carrier among its frequency
+        options, so a change has to reach it even when no window is open.
+        """
+        if frequency == self._rf_custom_frequency:
+            return
+        self._rf_custom_frequency = frequency
         self._notify_state()
 
     @property

@@ -17,6 +17,11 @@ from broadlink_async.remote import (
 import pytest
 
 from custom_components.broadsniff.const import HAS_RF_RECEIVER
+from homeassistant.components.number import (
+    ATTR_VALUE,
+    DOMAIN as NUMBER_DOMAIN,
+    SERVICE_SET_VALUE,
+)
 from homeassistant.components.select import (
     ATTR_OPTION,
     DOMAIN as SELECT_DOMAIN,
@@ -41,6 +46,9 @@ SWITCH = "switch.garage_rf_capture"
 IR_SWITCH = "switch.garage_ir_capture"
 MODE = "select.garage_capture_mode"
 FREQUENCY = "select.garage_rf_frequency"
+WINDOW = "number.garage_capture_window"
+CUSTOM = "number.garage_rf_custom_frequency"
+PRESET_OPTIONS = {"mhz_433_92": 433_920_000, "mhz_315": 315_000_000, "sweep": "sweep"}
 
 # Button 1 of a DEWENWILS IT104 keyfob, captured by an RM4 pro.
 KEYFOB_BUTTON_1 = bytes.fromhex(
@@ -154,7 +162,83 @@ async def test_attributes_from_startup(
         "capture_phase": None,
         "frequency_hz": None,
         "capture_switch": SWITCH,
+        "window_length": WINDOW,
+        "capture_mode_select": MODE,
+        "frequency_select": FREQUENCY,
+        "frequency_options": PRESET_OPTIONS,
     }
+
+
+async def test_frequency_options_follow_the_select(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """Every option the map offers is one the select has, in its order."""
+    await _setup(hass, fake_apis)
+
+    options = _attributes(hass)["frequency_options"]
+    select_options = hass.states.get(FREQUENCY).attributes["options"]
+    assert list(options) == [option for option in select_options if option in options]
+    # Custom is left out while its number is disabled, as it is by default.
+    assert "custom" not in options
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_custom_option_follows_the_number(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """With the custom number enabled, custom is offered at its carrier."""
+    await _setup(hass, fake_apis)
+    assert _attributes(hass)["frequency_options"] == PRESET_OPTIONS | {
+        "custom": 433_920_000
+    }
+
+    await _call(
+        hass,
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        entity_id=CUSTOM,
+        **{ATTR_VALUE: 433.42},
+    )
+
+    assert _attributes(hass)["frequency_options"]["custom"] == 433_420_000
+
+    er.async_get(hass).async_update_entity(
+        CUSTOM, disabled_by=er.RegistryEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+    assert _attributes(hass)["frequency_options"] == PRESET_OPTIONS
+
+
+async def test_renamed_frequency_select(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """Renaming the frequency select reaches the receiver without a window."""
+    await _setup(hass, fake_apis)
+
+    er.async_get(hass).async_update_entity(
+        FREQUENCY, new_entity_id="select.garage_learn_carrier"
+    )
+    await hass.async_block_till_done()
+
+    assert _attributes(hass)["frequency_select"] == "select.garage_learn_carrier"
+
+
+async def test_disabled_frequency_select_takes_its_options(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """Without the select there is nothing to offer, so the map goes too."""
+    await _setup(hass, fake_apis)
+
+    er.async_get(hass).async_update_entity(
+        FREQUENCY, disabled_by=er.RegistryEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+
+    attributes = _attributes(hass)
+    assert "frequency_select" not in attributes
+    assert "frequency_options" not in attributes
+    assert attributes["window_length"] == WINDOW
+    assert attributes["capture_switch"] == SWITCH
 
 
 async def test_capture_mode_is_reported_and_restored(
