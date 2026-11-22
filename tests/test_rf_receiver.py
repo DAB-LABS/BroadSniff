@@ -534,3 +534,26 @@ async def test_keyfob_capture(hass: HomeAssistant, fake_apis: FakeApis) -> None:
     assert codes == {0x950E49}
     gaps = {-frame[-1] for frame in whole}
     assert all(12_800 < gap < 13_000 for gap in gaps)
+
+
+async def test_315_capture_is_published_with_its_real_timings(
+    hass: HomeAssistant, fake_apis: FakeApis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A capture away from 433.92 MHz reaches subscribers read correctly."""
+    from custom_components.broadsniff import rm4_rf
+
+    from .test_rm4_rf import AS_433_92, CAPTURE_315
+
+    monkeypatch.setattr(rm4_rf, "LIBRARY_READS_EVERY_CARRIER", False)
+    window = await _setup(hass, fake_apis)
+    received = _subscribe(hass)
+
+    await _call(hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id=SWITCH)
+    window.send(CapturedSignal.from_packet(CAPTURE_315, 315.0, kind=SignalKind.RF_315))
+    await hass.async_block_till_done()
+
+    assert received[0].frequency == 315_000_000
+    assert received[0].timings == [
+        pulse if index % 2 == 0 else -pulse
+        for index, pulse in enumerate(data_to_pulses(AS_433_92))
+    ]

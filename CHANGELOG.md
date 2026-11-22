@@ -14,6 +14,14 @@
   `frequency_number`, with `frequency_number_option: custom`, while that
   number is enabled, so HAIR can offer any carrier. `frequency_options`
   still gives Custom's carrier in Hz, so older HAIR keeps working.
+- RF codes captured away from 433.92 MHz (315 MHz, 433.42 MHz and the rest)
+  reach the RF receiver and the RF capture event with their real timings
+  and carrier. The RM4 pro changes the first byte of a capture with the
+  carrier, and broadlink-async before 1.4.1 recognizes only the 433.92 MHz
+  one, so other captures started with four made-up timings and lost their
+  first two real ones. BroadSniff rereads them itself until Home Assistant
+  ships broadlink-async 1.4.1, which fixes this. The code you send back is
+  the device's own bytes and is unchanged.
 
 ## 0.3.1 - 2026-11-20
 

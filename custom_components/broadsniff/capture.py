@@ -39,6 +39,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_CAPTURE_WINDOW, DEFAULT_RF_CUSTOM_FREQUENCY, DOMAIN
+from .rm4_rf import reread_rm4_rf
 
 if TYPE_CHECKING:
     from .device import BroadlinkRemote
@@ -395,7 +396,7 @@ class CaptureManager:
                     if sliding:
                         self._ends_at = _deadline(window)
                     self._notify_state()
-                    self._publish(signal, kind, on_signal)
+                    self._publish(reread_rm4_rf(signal), kind, on_signal)
         except asyncio.CancelledError:
             if self._failure is None:
                 stopped = True
