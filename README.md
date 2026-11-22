@@ -154,12 +154,13 @@ And these settings, which are remembered across restarts:
   - **Stop after the first code**: closes as soon as it hears one code.
 - **RF frequency** (RM pro and RM4 pro): the carrier RF capture listens on.
   - **433.92 MHz** (default): most remotes.
+  - **433.42 MHz**: Somfy blinds and awnings.
   - **315 MHz**: many US garage and gate remotes.
   - **Sweep**: the remote searches for the carrier. Hold the button for a
     few seconds, release it, then press it once more. Slower, and less
     reliable on some firmware. It needs a remote that keeps transmitting
     while the button is held (see [Capture an RF code](#capture-an-rf-code)).
-  - **Custom**: uses **RF custom frequency**, 300 to 450 MHz. That entity
+  - **Custom**: uses **RF custom frequency**, 305 to 438 MHz. That entity
     is disabled until you need it; enable it on the device page.
 
 The capture entities follow the built-in integration: when Broadlink has a
@@ -300,10 +301,15 @@ on the receiver's pill:
   `sweep`. **Custom** is the carrier on the **RF custom frequency** number,
   and is only offered while that number is enabled. It is disabled by
   default; enable it in the entity settings to listen on a carrier that
-  is not a preset, such as 433.42 MHz for Somfy.
+  is not a preset.
+- `frequency_number`: the entity ID of the **RF custom frequency** number,
+  while it is enabled, so HAIR can offer any carrier.
+- `frequency_number_option`: `custom`, the option that listens on that
+  number's carrier. HAIR writes the number, then picks it.
 
-It declares the two bands the built-in Broadlink integration sends on,
-433.05 to 434.79 MHz and 314.95 to 315.25 MHz.
+It declares the bands an RM4 pro was heard receiving on through a capture
+window, 305 to 335 MHz and 433.42 to 438 MHz. A carrier outside them can
+still be set, but may not be heard.
 
 **Reading an RM4 pro capture.** BroadSniff publishes every duration the
 remote reports, as it reports them. An RF capture from an RM4 pro is a

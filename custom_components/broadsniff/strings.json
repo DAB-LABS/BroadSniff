@@ -106,6 +106,7 @@
         "name": "RF frequency",
         "state": {
           "mhz_433_92": "433.92 MHz (most remotes)",
+          "mhz_433_42": "433.42 MHz (Somfy blinds and awnings)",
           "mhz_315": "315 MHz (many US garage and gate remotes)",
           "sweep": "Sweep (hold the button while it searches)",
           "custom": "Custom (set RF custom frequency)"

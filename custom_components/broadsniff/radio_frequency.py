@@ -54,6 +54,11 @@ ATTR_FREQUENCY_HZ = "frequency_hz"
 ATTR_FREQUENCY_SELECT = "frequency_select"
 ATTR_FREQUENCY_OPTIONS = "frequency_options"
 SWEEP = "sweep"
+# The RF custom frequency number, and the frequency select's option that
+# listens on its carrier, so HAIR can offer any carrier: it writes the
+# number, then picks that option.
+ATTR_FREQUENCY_NUMBER = "frequency_number"
+ATTR_FREQUENCY_NUMBER_OPTION = "frequency_number_option"
 
 # The translation keys the RF settings entities build their unique IDs from
 # (see select.py and number.py).
@@ -196,6 +201,9 @@ class BroadlinkRadioFrequencyReceiverEntity(
             declared[ATTR_FREQUENCY_OPTIONS] = frequency_options(
                 device.capture, custom=custom is not None
             )
+            if custom is not None:
+                declared[ATTR_FREQUENCY_NUMBER] = custom
+                declared[ATTR_FREQUENCY_NUMBER_OPTION] = RFFrequency.CUSTOM.value
         return declared
 
     @callback

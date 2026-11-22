@@ -45,14 +45,17 @@ DEFAULT_CAPTURE_WINDOW = 10.0
 MIN_CAPTURE_WINDOW = 1.0
 MAX_CAPTURE_WINDOW = 60.0
 
-# The RM pro and RM4 pro receive RF between these carriers.
-MIN_RF_FREQUENCY = 300.0
-MAX_RF_FREQUENCY = 450.0
+# The carriers the RF custom frequency number accepts, in MHz: the span of
+# the bands an RM4 pro was measured receiving on (RF_FREQUENCY_RANGES).
+MIN_RF_FREQUENCY = 305.0
+MAX_RF_FREQUENCY = 438.0
 DEFAULT_RF_CUSTOM_FREQUENCY = 433.92
 
-# The bands the RF receiver declares, in Hz: the same two the built-in
-# Broadlink integration's RF transmitter declares for these remotes.
+# The bands the RF receiver declares, in Hz: where an RM4 pro was measured
+# hearing through a capture window (2026-11-19, two runs). It was heard at
+# 305, 315, 320, 335, 433.42, 433.92 and 438 MHz, and not at 303.875, 340,
+# 390, 418 or 440. 431 to 433.42 was not tested, so it is left out.
 RF_FREQUENCY_RANGES: list[tuple[int, int]] = [
-    (433_050_000, 434_790_000),
-    (314_950_000, 315_250_000),
+    (305_000_000, 335_000_000),
+    (433_420_000, 438_000_000),
 ]

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 - Unreleased
+
+- The RF receiver declares the bands an RM4 pro was measured receiving on,
+  305 to 335 MHz and 433.42 to 438 MHz, instead of the built-in
+  integration's two narrow transmit bands. A carrier outside them can still
+  be set.
+- **RF frequency** has a 433.42 MHz preset, for Somfy blinds and awnings.
+- **RF custom frequency** takes 305 to 438 MHz, the span of the measured
+  bands, instead of 300 to 450. A value saved outside it comes back as the
+  nearest end.
+- The RF receiver names the **RF custom frequency** number as
+  `frequency_number`, with `frequency_number_option: custom`, while that
+  number is enabled, so HAIR can offer any carrier. `frequency_options`
+  still gives Custom's carrier in Hz, so older HAIR keeps working.
+
 ## 0.3.1 - 2026-11-20
 
 - Both receivers name the entities that set the next window, as HAIR's

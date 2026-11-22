@@ -264,6 +264,7 @@ async def test_settings_are_restored(hass: HomeAssistant, fake_apis: FakeApis) -
     ("option", "expected"),
     [
         pytest.param("mhz_433_92", 433.92, id="433"),
+        pytest.param("mhz_433_42", 433.42, id="433_42"),
         pytest.param("mhz_315", 315.0, id="315"),
         pytest.param("sweep", 433.92, id="sweep"),
     ],
@@ -443,6 +444,50 @@ async def test_rf_custom_frequency(hass: HomeAssistant, fake_apis: FakeApis) -> 
             entity_id="number.garage_rf_custom_frequency",
             **{ATTR_VALUE: 868},
         )
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_custom_frequency_takes_the_measured_span(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """The custom number takes 305 to 438 MHz and refuses the rest."""
+    await _setup(hass, fake_apis)
+    state = hass.states.get("number.garage_rf_custom_frequency")
+    assert state.attributes["min"] == 305.0
+    assert state.attributes["max"] == 438.0
+    for refused in (300, 304.99, 438.01, 450):
+        with pytest.raises(ServiceValidationError):
+            await _call(
+                hass,
+                NUMBER_DOMAIN,
+                SERVICE_SET_VALUE,
+                entity_id="number.garage_rf_custom_frequency",
+                **{ATTR_VALUE: refused},
+            )
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_restored_custom_frequency_is_clamped(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """A carrier saved under the old 300 to 450 limits comes back inside."""
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State("number.garage_rf_custom_frequency", "445.0"),
+                {
+                    "native_value": 445.0,
+                    "native_min_value": 300.0,
+                    "native_max_value": 450.0,
+                    "native_step": 0.01,
+                    "native_unit_of_measurement": "MHz",
+                },
+            )
+        ],
+    )
+    await _setup(hass, fake_apis)
+    assert hass.states.get("number.garage_rf_custom_frequency").state == "438.0"
 
 
 async def test_restored_window_is_clamped(
