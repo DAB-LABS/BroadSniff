@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.2 - 2026-11-21
+## 0.3.2 - 2026-11-23
 
 - The RF receiver declares the bands an RM4 pro was measured receiving on,
   305 to 335 MHz and 433.42 to 438 MHz, instead of the built-in
