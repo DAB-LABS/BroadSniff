@@ -80,6 +80,8 @@ class RFFrequency(StrEnum):
     """The carrier an RF capture window listens on."""
 
     MHZ_433_92 = "mhz_433_92"
+    # Somfy RTS blinds and awnings.
+    MHZ_433_42 = "mhz_433_42"
     MHZ_315 = "mhz_315"
     # The remote finds the carrier while a button is held.
     SWEEP = "sweep"
@@ -109,7 +111,11 @@ class RemoteStoppedAnswering(Exception):
 
 
 DEFAULT_RF_FREQUENCY = RFFrequency.MHZ_433_92
-RF_PRESET_CARRIERS = {RFFrequency.MHZ_433_92: 433.92, RFFrequency.MHZ_315: 315.0}
+RF_PRESET_CARRIERS = {
+    RFFrequency.MHZ_433_92: 433.92,
+    RFFrequency.MHZ_433_42: 433.42,
+    RFFrequency.MHZ_315: 315.0,
+}
 
 
 @dataclass(frozen=True, slots=True)

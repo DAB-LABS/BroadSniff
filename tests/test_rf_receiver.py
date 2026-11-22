@@ -48,7 +48,12 @@ MODE = "select.garage_capture_mode"
 FREQUENCY = "select.garage_rf_frequency"
 WINDOW = "number.garage_capture_window"
 CUSTOM = "number.garage_rf_custom_frequency"
-PRESET_OPTIONS = {"mhz_433_92": 433_920_000, "mhz_315": 315_000_000, "sweep": "sweep"}
+PRESET_OPTIONS = {
+    "mhz_433_92": 433_920_000,
+    "mhz_433_42": 433_420_000,
+    "mhz_315": 315_000_000,
+    "sweep": "sweep",
+}
 
 # Button 1 of a DEWENWILS IT104 keyfob, captured by an RM4 pro.
 KEYFOB_BUTTON_1 = bytes.fromhex(
@@ -133,17 +138,20 @@ async def test_receiver_on_rf_remotes_only(
 
 
 async def test_declared_bands(hass: HomeAssistant, fake_apis: FakeApis) -> None:
-    """The receiver declares the built-in Broadlink transmitter's two bands."""
+    """The receiver declares the bands an RM4 pro was measured hearing on."""
     await _setup(hass, fake_apis)
     entity = _entity(hass)
 
     assert entity.supported_frequency_ranges == [
-        (433_050_000, 434_790_000),
-        (314_950_000, 315_250_000),
+        (305_000_000, 335_000_000),
+        (433_420_000, 438_000_000),
     ]
-    assert entity.supports_frequency(433_920_000)
-    assert entity.supports_frequency(315_000_000)
-    assert not entity.supports_frequency(303_875_000)
+    for heard in (305_000_000, 315_000_000, 320_000_000, 335_000_000):
+        assert entity.supports_frequency(heard)
+    for heard in (433_420_000, 433_920_000, 438_000_000):
+        assert entity.supports_frequency(heard)
+    for missed in (303_875_000, 340_000_000, 390_000_000, 418_000_000, 440_000_000):
+        assert not entity.supports_frequency(missed)
     assert not entity.supports_frequency(868_350_000)
 
 
@@ -180,6 +188,47 @@ async def test_frequency_options_follow_the_select(
     assert list(options) == [option for option in select_options if option in options]
     # Custom is left out while its number is disabled, as it is by default.
     assert "custom" not in options
+
+
+async def test_no_frequency_number_while_custom_is_disabled(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """Without the custom number there is nothing for "Other..." to write."""
+    await _setup(hass, fake_apis)
+
+    attributes = _attributes(hass)
+    assert "frequency_number" not in attributes
+    assert "frequency_number_option" not in attributes
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_frequency_number_is_declared_with_its_option(
+    hass: HomeAssistant, fake_apis: FakeApis
+) -> None:
+    """The custom number is named, with the option that listens on it."""
+    await _setup(hass, fake_apis)
+
+    attributes = _attributes(hass)
+    assert attributes["frequency_number"] == CUSTOM
+    assert attributes["frequency_number_option"] == "custom"
+    # The option the number feeds is one the select really has, and the
+    # map still gives it a carrier, so a HAIR that reads only the map works.
+    assert "custom" in hass.states.get(FREQUENCY).attributes["options"]
+    assert attributes["frequency_options"]["custom"] == 433_920_000
+
+    er.async_get(hass).async_update_entity(
+        CUSTOM, new_entity_id="number.garage_learn_carrier"
+    )
+    await hass.async_block_till_done()
+    assert _attributes(hass)["frequency_number"] == "number.garage_learn_carrier"
+
+    er.async_get(hass).async_update_entity(
+        "number.garage_learn_carrier", disabled_by=er.RegistryEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+    attributes = _attributes(hass)
+    assert "frequency_number" not in attributes
+    assert "frequency_number_option" not in attributes
 
 
 @pytest.mark.usefixtures("entity_registry_enabled_by_default")
