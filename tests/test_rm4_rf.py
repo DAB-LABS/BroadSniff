@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+from broadlink_async import remote as broadlink_remote
 from broadlink_async.remote import (
     CapturedSignal,
     SignalKind,
@@ -25,6 +28,24 @@ CAPTURE_315 = bytes.fromhex(
 AS_433_92 = bytes([0xB1]) + CAPTURE_315[1:]
 
 
+def old_library_signal(
+    packet: bytes, window_mhz: float, kind: SignalKind = SignalKind.RF_315
+) -> CapturedSignal:
+    """Return the signal a broadlink-async before 1.4.1 builds from a capture.
+
+    Such a library reads a capture whose first byte isn't 0xB1 from byte 4,
+    and reports the carrier the window listened on. The signal is built
+    here rather than by the installed library, so the tests mean the same
+    whichever version is installed.
+    """
+    four_byte_layout = packet[:1] + b"\x00" + packet[2:]
+    return dataclasses.replace(
+        CapturedSignal.from_packet(packet, window_mhz, kind=kind),
+        pulses=tuple(data_to_pulses(four_byte_layout)),
+        frequency_mhz=window_mhz,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _old_library(monkeypatch: pytest.MonkeyPatch) -> None:
     """Act as a broadlink-async that reads only 0xB1 captures."""
@@ -32,7 +53,7 @@ def _old_library(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_315_capture_is_reread() -> None:
-    signal = CapturedSignal.from_packet(CAPTURE_315, 315.0, kind=SignalKind.RF_315)
+    signal = old_library_signal(CAPTURE_315, 315.0)
     fixed = reread_rm4_rf(signal)
     assert fixed.packet == CAPTURE_315
     assert fixed.pulses == tuple(data_to_pulses(AS_433_92))
@@ -44,7 +65,8 @@ def test_315_capture_is_reread() -> None:
 
 
 def test_the_packet_carrier_wins() -> None:
-    signal = CapturedSignal.from_packet(CAPTURE_315, 433.92, kind=SignalKind.RF_315)
+    signal = old_library_signal(CAPTURE_315, 433.92)
+    assert signal.frequency_mhz == 433.92
     assert reread_rm4_rf(signal).frequency_mhz == 315.0
 
 
@@ -73,5 +95,22 @@ def test_other_packets_are_left_alone(packet: bytes) -> None:
 
 def test_a_fixed_library_is_trusted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rm4_rf, "LIBRARY_READS_EVERY_CARRIER", True)
-    signal = CapturedSignal.from_packet(CAPTURE_315, 315.0, kind=SignalKind.RF_315)
+    signal = old_library_signal(CAPTURE_315, 315.0)
     assert reread_rm4_rf(signal) is signal
+
+
+def test_the_installed_library_and_the_stopgap_agree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whichever library is installed, the published timings are the real ones.
+
+    A library that reads every carrier gives them itself, and the stopgap
+    stands aside; an older one gives the misread, and the stopgap rereads it.
+    """
+    monkeypatch.setattr(
+        rm4_rf,
+        "LIBRARY_READS_EVERY_CARRIER",
+        hasattr(broadlink_remote, "is_rm4_rf_packet"),
+    )
+    signal = CapturedSignal.from_packet(CAPTURE_315, 315.0, kind=SignalKind.RF_315)
+    assert reread_rm4_rf(signal).pulses == tuple(data_to_pulses(AS_433_92))

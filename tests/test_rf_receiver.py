@@ -542,14 +542,14 @@ async def test_315_capture_is_published_with_its_real_timings(
     """A capture away from 433.92 MHz reaches subscribers read correctly."""
     from custom_components.broadsniff import rm4_rf
 
-    from .test_rm4_rf import AS_433_92, CAPTURE_315
+    from .test_rm4_rf import AS_433_92, CAPTURE_315, old_library_signal
 
     monkeypatch.setattr(rm4_rf, "LIBRARY_READS_EVERY_CARRIER", False)
     window = await _setup(hass, fake_apis)
     received = _subscribe(hass)
 
     await _call(hass, SWITCH_DOMAIN, SERVICE_TURN_ON, entity_id=SWITCH)
-    window.send(CapturedSignal.from_packet(CAPTURE_315, 315.0, kind=SignalKind.RF_315))
+    window.send(old_library_signal(CAPTURE_315, 315.0))
     await hass.async_block_till_done()
 
     assert received[0].frequency == 315_000_000
